@@ -1,0 +1,106 @@
+# ============================================================================
+# CLANG-FORMAT CONFIGURATION FOR VNExos Lamencia (C++23 Bare-Metal)
+# ============================================================================
+BasedOnStyle: LLVM
+Language: Cpp
+
+# Target the latest C++ standard driven by your Arch Linux toolchain
+Standard: Latest
+
+# ----------------------------------------------------------------------------
+# Indentation and Layout (Compact & Structured)
+# ----------------------------------------------------------------------------
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 0
+ContinuationIndentWidth: 4
+
+# Keep namespaces tight to avoid wasting horizontal screenspace in nested modules
+NamespaceIndentation: None
+
+# ----------------------------------------------------------------------------
+# Pointer and Reference Alignment (Critical for OSDev)
+# ----------------------------------------------------------------------------
+PointerAlignment: Left
+
+# ----------------------------------------------------------------------------
+# Bracket and Brace Breaking Configurations
+# ----------------------------------------------------------------------------
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: false
+  AfterControlStatement: Always
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: false
+  AfterObjCDeclaration: true
+  AfterStruct: true
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+# ----------------------------------------------------------------------------
+# Alignment & Aesthetics (Maximizes Scannability)
+# ----------------------------------------------------------------------------
+# Căn thẳng hàng các dấu bằng (=) khi gán giá trị
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+  AlignCompound: true
+  PadOperators: true
+
+# ÉP CĂN THẲNG HÀNG CÁC ĐỊNH NGHĨA #define (MACRO) TOÀN DIỆN
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+# ÉP CĂN THẲNG HÀNG TÊN BIẾN TRONG STRUCT/CLASS/KHAI BÁO
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+# Căn thẳng hàng các comment (//) ở cuối dòng
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 1
+
+# ----------------------------------------------------------------------------
+# Modern C++ Features & Inline Assembly Formatting
+# ----------------------------------------------------------------------------
+AllowShortBlocksOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLoopsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: WithoutElse
+
+AllowShortLambdasOnASingleLine: All
+
+# ----------------------------------------------------------------------------
+# Spaces and Padding
+# ----------------------------------------------------------------------------
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+SpacesInConditionalStatement: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+SpacesInAngles: Never
+
+# ----------------------------------------------------------------------------
+# Sort Includes (Sắp xếp include theo bảng chữ cái cho sạch sẽ)
+# ----------------------------------------------------------------------------
+SortIncludes: CaseSensitive
+
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+AllowAllConstructorInitializersOnNextLine: true
