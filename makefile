@@ -6,7 +6,7 @@
 # =========================================================
 
 # Tệp nhị phân đầu ra
-TARGET = hlt.elf
+TARGET = boreas.elf
 
 # Trình biên dịch
 CC = gcc

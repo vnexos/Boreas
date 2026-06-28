@@ -15,12 +15,27 @@
 #include <iostream>
 #include <string>
 
+extern bool bDumpFlag;
+void        print_hex(const uint8_t* data, uint64_t len);
+
 // Xóa sạch vùng nhớ nhạy cảm
 inline void secureZeroize(void* p, size_t n)
 {
   volatile uint8_t* vp = (volatile uint8_t*)p;
   while (n--)
     *vp++ = 0;
+}
+
+void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring())
+{
+  if (bDumpFlag)
+  {
+    if (label.empty())
+      std::wcout << L"    Mã thô: " << std::endl;
+    else
+      std::wcout << L"    " << label << L':' << std::endl;
+    print_hex(data, len);
+  }
 }
 
 bool Encrypt::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKeyPath)
@@ -38,7 +53,9 @@ bool Encrypt::generateKey(const std::wstring& secKeyPath, const std::wstring& pu
     return false;
 
   std::wcout << L"[+] Khóa bí mật được lưu ở: " << secKeyPath << " (" << KYBER_INDCCA_SECKEYBYTES << " byte)\n";
+  dump(sk, KYBER_INDCCA_SECKEYBYTES);
   std::wcout << L"[+] Khóa công khai được lưu ở: " << pubKeyPath << " (" << KYBER_INDCCA_PUBKEYBYTES << " byte)\n";
+  dump(pk, KYBER_INDCCA_PUBKEYBYTES);
 
   return true;
 }
@@ -104,6 +121,9 @@ bool Encrypt::encryptFile(const std::wstring& pubKeyPath, const std::wstring& in
     return false;
 
   std::wcout << L"[+] Đã lưu dữ liệu mã hóa vào: " << outPath << " (" << payload.size() << " byte)\n";
+  dump(ct, sizeof(ct), L"Bản mã Kyber");
+  dump(iv, sizeof(iv), L"Mảng khởi tạo");
+  dump(ciphertext.data(), ciphertext.size(), L"Bản mã AES");
 
   return true;
 }
