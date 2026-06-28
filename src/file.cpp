@@ -8,6 +8,7 @@
  * @brief Triển khai các chức năng đọc/ghi và xử lý tệp tin.
  */
 #include "file.hpp"
+#include "crypto/sha3.hpp"
 #include <fstream>
 
 bool File::Write(const std::wstring& fileName, const File::Content& fileContent)
@@ -63,5 +64,44 @@ bool File::Read(const std::wstring& fileName, File::Content& fileContent)
   }
 
   inp.close();
+  return true;
+}
+
+bool File::HashFile(const std::wstring& filePath, std::vector<uint8_t>& outputHash)
+{
+  // Mở tệp ở chế độ đọc nhị phân
+#if defined(_WIN32)
+  std::ifstream inp(fileName, std::ios::in | std::ios::binary | std::ios::ate);
+#else
+  std::string   utf8FileName(filePath.begin(), filePath.end());
+  std::ifstream inp(utf8FileName, std::ios::in | std::ios::binary);
+#endif
+
+  if (!inp)
+    return false;
+
+  outputHash.resize(128);
+
+  // Khởi tạo trạng thái Keccak
+  Crypto::Keccak::State state;
+  init(&state, 72);
+
+  // Khởi tạo bộ đệm nhỏ
+  const size_t         BUFFER_SIZE = 64 * 1024;
+  std::vector<uint8_t> buffer(BUFFER_SIZE);
+
+  // Vòng lặp hấp thụ tệp
+  while (inp.read(reinterpret_cast<char*>(buffer.data()), buffer.size()) || inp.gcount() > 0)
+  {
+    uint64_t bytesRead = inp.gcount();
+
+    // Hấp thụ khúc dữ liệu vừa đọc vào trạng thái
+    Crypto::Keccak::absorb(&state, buffer.data(), bytesRead);
+  }
+
+  // Hoàn tất quá trình đệm dữ liệu
+  Crypto::Keccak::finalize(&state, 0x25);
+  Crypto::Keccak::squeeze(outputHash.data(), outputHash.size(), &state);
+
   return true;
 }

@@ -7,11 +7,12 @@
  * @file main.cpp
  * @brief Tệp mã nguồn chính, điểm bắt đầu thực thi chương trình.
  */
+#include "converter.hpp"
 #include "crypto/randombytes.hpp"
 #include "encrypt.hpp"
+#include "sign.hpp"
 
 #include <clocale>
-#include <cstdio>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -20,22 +21,6 @@
 #include <vector>
 
 using namespace Crypto;
-
-std::wstring ToWString(const char* str)
-{
-  if (!str) return L"";
-
-  size_t len = std::mbstowcs(nullptr, str, 0);
-  if (len == static_cast<size_t>(-1))
-  {
-    return L""; // Chuỗi chứa ký tự lỗi
-  }
-
-  std::wstring wstr(len, L'\0');
-  std::mbstowcs(&wstr[0], str, len + 1);
-
-  return wstr;
-}
 
 // Hàm tiện ích để in mảng byte dạng Thập lục phân để dễ so sánh
 void print_hex(const uint8_t* data, uint64_t len)
@@ -71,15 +56,31 @@ void printUsage(const char* prog)
   wprintf(L"  ╚═════════════════════════════════════════════╝\n");
   wprintf(L"Sử dụng:\n");
   wprintf(L"[*] Mã hóa tệp: %s -encrypt\n", prog);
-  wprintf(L"    -g <tệp khóa bí mật> <tệp khóa công khai>    Tạo cặp khóa Kyber.\n");
-  wprintf(L"    -e <tệp khóa công khai> <tệp vào> <tệp ra>   Mã hóa tệp bằng khóa công khai\n");
-  wprintf(L"                                                 Kyber kết hợp AES-256.\n");
-  wprintf(L"    -d <tệp khóa bí mật> <tệp vào> <tệp ra>      Giải mã tệp bằng khóa bí mật\n");
-  wprintf(L"                                                 Kyber kết hợp AES-256.\n");
+  wprintf(L"    -g <tệp khóa bí mật> <tệp khóa công khai>   : Tạo cặp khóa Kyber.\n");
+  wprintf(L"    -e <tệp khóa công khai> <tệp vào> <tệp ra>  : Mã hóa tệp bằng khóa công khai\n");
+  wprintf(L"                                                  Kyber kết hợp AES-256.\n");
+  wprintf(L"    -d <tệp khóa bí mật> <tệp vào> <tệp ra>     : Giải mã tệp bằng khóa bí mật\n");
+  wprintf(L"                                                  Kyber kết hợp AES-256.\n");
   wprintf(L"[*] Ký tệp:     %s -sign\n", prog);
+  wprintf(L"    -g <tệp khóa riêng tư> <tệp khóa công khai> : Tạo cặp khóa Dilithium.\n");
+  wprintf(L"    -s <tệp khóa riêng tư> <tệp vào> <tệp ra>   : Ký tệp bằng khóa riêng tư\n");
+  wprintf(L"                                                  Dilithium.\n");
+  wprintf(L"    -x <tệp khóa công khai> <tệp vào> <tệp ra>  : Xác minh tệp đã ký bằng thuật\n");
+  wprintf(L"                                                  toán Dilithium.\n");
+  wprintf(L"    -r <tệp khóa công khai>                     : Đọc thông tin trong khóa công\n");
+  wprintf(L"                                                  khai.\n");
+  wprintf(L"[*] Cờ bổ sung: \n");
+  wprintf(L"    --verbose [-v]                              : Xả ra mã Thập lục phân để dễ\n");
+  wprintf(L"                                                  so sánh.\n");
+  wprintf(L"    --type    [-t] <loại tệp>                   : Xác định loại tệp cần ký.\n");
+  wprintf(L"                   elf                          : Chuyển đổi từ định dạng tệp\n");
+  wprintf(L"                                                  nhị phân ELF sang định dạng\n");
+  wprintf(L"                                                  VNEX và ký vào tệp.\n");
+  wprintf(L"                   (mặc định)                   : Ký vào cuối tệp.\n");
 }
 
-bool bDumpFlag = false;
+bool         bDumpFlag = false;
+std::wstring strType;
 
 int main(int argc, char* argv[])
 {
@@ -101,32 +102,50 @@ int main(int argc, char* argv[])
   randombytes_stir(reinterpret_cast<const uint8_t*>(real_seed), sizeof(real_seed));
 
   std::vector<std::wstring> cleanArgv;
-  cleanArgv.push_back(ToWString(argv[0]));
+  cleanArgv.push_back(Converter::Utf8ToWString(argv[0]));
 
   for (int i = 1; i < argc; ++i)
   {
     if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0)
       bDumpFlag = true;
+    else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--type") == 0)
+      strType = std::move(Converter::Utf8ToWString(argv[++i]));
     else
-      cleanArgv.push_back(ToWString(argv[i]));
+      cleanArgv.push_back(Converter::Utf8ToWString(argv[i]));
   }
 
-  if (cleanArgv[1].compare(L"-encrypt") == 0 && cleanArgv.size() >= 3) // Tập lệnh mã hóa
+  std::wcout << strType << std::endl;
+
+  if (cleanArgv.size() > 1)
   {
-    if (cleanArgv[2].compare(L"-g") == 0 && cleanArgv.size() == 5)     // Tạo cặp khóa
+    if (cleanArgv[1].compare(L"-encrypt") == 0 && cleanArgv.size() >= 3) // Tập lệnh mã hóa
     {
-      return !Encrypt::generateKey(cleanArgv[3], cleanArgv[4]);
-    } else if (cleanArgv[2].compare(L"-e") == 0 && cleanArgv.size() == 6) // Mã hóa tệp
+      if (cleanArgv[2].compare(L"-g") == 0 && cleanArgv.size() == 5)     // Tạo cặp khóa
+      {
+        return !Encrypt::generateKey(cleanArgv[3], cleanArgv[4]);
+      } else if (cleanArgv[2].compare(L"-e") == 0 && cleanArgv.size() == 6) // Mã hóa tệp
+      {
+        return !Encrypt::encryptFile(cleanArgv[3], cleanArgv[4], cleanArgv[5]);
+      } else if (cleanArgv[2].compare(L"-d") == 0 && cleanArgv.size() == 6) // Giải mã tệp
+      {
+        return !Encrypt::decryptFile(cleanArgv[3], cleanArgv[4], cleanArgv[5]);
+      } else
+      {
+        wprintf(L"[-] Lệnh sử dụng -encrypt không hợp lệ!\n");
+        printUsage(argv[0]);
+        return 1;
+      }
+    } else if (cleanArgv[1].compare(L"-sign") == 0 && cleanArgv.size() >= 3)
     {
-      return !Encrypt::encryptFile(cleanArgv[3], cleanArgv[4], cleanArgv[5]);
-    } else if (cleanArgv[2].compare(L"-d") == 0 && cleanArgv.size() == 6) // Giải mã tệp
-    {
-      return !Encrypt::decryptFile(cleanArgv[3], cleanArgv[4], cleanArgv[5]);
-    } else
-    {
-      wprintf(L"[-] Lệnh sử dụng -encrypt không hợp lệ!\n");
-      printUsage(argv[0]);
-      return 1;
+      if (cleanArgv[2].compare(L"-g") == 0 && cleanArgv.size() == 5)
+      {
+        return !Sign::generateKey(cleanArgv[3], cleanArgv[4]);
+      } else
+      {
+        wprintf(L"[-] Lệnh sử dụng -sign không hợp lệ!\n");
+        printUsage(argv[0]);
+        return 1;
+      }
     }
   }
 

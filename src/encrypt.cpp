@@ -5,7 +5,7 @@
  * Xem tệp LICENSE tại thư mục gốc để biết thêm chi tiết.
  *
  * @file encrypt.cpp
- * @brief Triển khai logic mã hóa/giải mã cấp cao.
+ * @brief Triển khai thuật toán mã hóa/giải mã cấp cao.
  */
 #include "encrypt.hpp"
 #include "crypto/aes256.hpp"
@@ -43,7 +43,7 @@ bool Encrypt::generateKey(const std::wstring& secKeyPath, const std::wstring& pu
   uint8_t pk[KYBER_INDCCA_PUBKEYBYTES];
   uint8_t sk[KYBER_INDCCA_SECKEYBYTES];
 
-  wprintf(L"[+] Đang tạo cặp khóa mã hóa...\n");
+  wprintf(L"[+] Đang tạo cặp khóa mã hóa Kyber...\n");
 
   Kyber::generateKeyPair(pk, sk);
 

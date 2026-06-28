@@ -35,6 +35,14 @@ bool Write(const std::wstring& fileName, const Content& fileContent);
  */
 bool Read(const std::wstring& fileName, Content& fileContent);
 
+/**
+ * Băm một tệp bằng thuật toán SHAV-1024.
+ * @param fileName Tên của tệp
+ * @param fileContent Nội dung của tệp đã được đọc
+ * @return false nếu có lỗi xãy ra trong quá trình đọc tệp
+ */
+bool HashFile(const std::wstring& filePath, std::vector<uint8_t>& outputHash);
+
 } // namespace File
 
 #endif // __FILE_HPP
