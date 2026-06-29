@@ -9,11 +9,15 @@
  */
 #include "sign.hpp"
 #include "converter.hpp"
+#include "crypto/aes256.hpp"
+#include "crypto/randombytes.hpp"
+#include "crypto/sha3.hpp"
 #include "file.hpp"
 #include "sig/dilithium.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
+#include <string.h>
 #include <string>
 #include <vector>
 
@@ -28,28 +32,39 @@
   }                                                                 \
   return res;
 
+extern std::wstring strType;
+
 void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring());
 
 /**
  * Định dạng của khối siêu dữ liệu
- *   [8 byte: mã nhận diện 'V', 'N', 'E', 'P', 'Q', 0, 0, 0]
- *   [8 byte: Thời gian cấp (unix timestamp, big-endian)]
- *   [8 byte: Thời gian hết hạn (unix timestamp, big-endian)]
- *   [2 byte: Độ dài tên công ty (big-endian)][tên công ty]
- *   [2 byte: Độ dài địa chỉ Email (big-endian)][địa chỉ email]
- *   [2 byte: Độ dài tên quốc gia (big-endian)][tên quốc gia]
- *   [2 byte: Độ dài mô tả (big-endian)][mô tả]
+ *   [8  byte: mã nhận diện 'V', 'N', 'E', 'P', 'Q', 0, 0, 0]
+ *   [32 byte: Mã băm của khóa hiện tại][32 byte: Mã băm của khóa cha]
+ *   [8  byte: Thời gian cấp (unix timestamp, big-endian)]
+ *   [8  byte: Thời gian hết hạn (unix timestamp, big-endian)]
+ *   [2  byte: Độ dài tên công ty (big-endian)][tên công ty]
+ *   [2  byte: Độ dài địa chỉ Email (big-endian)][địa chỉ email]
+ *   [2  byte: Độ dài tên quốc gia (big-endian)][tên quốc gia]
+ *   [2  byte: Độ dài mô tả (big-endian)][mô tả]
  */
 struct SignerMeta
 {
   uint64_t     issuedAt  = 0;
   uint64_t     expiredAt = 0;
-  std::wstring company;
+  uint8_t      currentKey[32];
+  uint8_t      parentKey[32];
+  std::wstring organization;
   std::wstring email;
   std::wstring country;
   std::wstring description;
 
   static constexpr uint64_t NEVER_EXPIRES = UINT64_MAX;
+
+  void clean()
+  {
+    memset(currentKey, 0, 32);
+    memset(parentKey, 0, 32);
+  }
 
   bool is_expired() const
   {
@@ -67,28 +82,21 @@ struct SignerMeta
   {
     std::vector<uint8_t> result;
 
-    std::vector<uint8_t> u8company     = stringToMetadataBytes(Converter::WStringToUtf8(company));
-    std::vector<uint8_t> u8email       = stringToMetadataBytes(Converter::WStringToUtf8(email));
-    std::vector<uint8_t> u8country     = stringToMetadataBytes(Converter::WStringToUtf8(country));
-    std::vector<uint8_t> u8description = stringToMetadataBytes(Converter::WStringToUtf8(description));
+    std::vector<uint8_t> u8organization = stringToMetadataBytes(Converter::WStringToUtf8(organization));
+    std::vector<uint8_t> u8email        = stringToMetadataBytes(Converter::WStringToUtf8(email));
+    std::vector<uint8_t> u8country      = stringToMetadataBytes(Converter::WStringToUtf8(country));
+    std::vector<uint8_t> u8description  = stringToMetadataBytes(Converter::WStringToUtf8(description));
 
-    // 24 byte cho mã nhận diện, ngày cấp phát và ngày hết hạn
-    // 8 byte tổng cộng để cho kích thước của 4 thông tin24 + 8 + u8company.size() + u8email.size() + u8country.size() + u8description.size()
+    // 64 byte cho SHA-256 của khóa và của khóa cha
+    // 16 byte cho ngày cấp phát và ngày hết hạn
+    // 8 byte  tổng cộng để cho kích thước của 4 thông tin: 8 + u8organization.size() + u8email.size() + u8country.size() + u8description.size()
+    // 8 byte  Kích thước khối siêu dữ liệu
+    // 8 byte  cho mã nhận diện
     result.reserve(
-        24 + 8 + u8company.size() + u8email.size() + u8country.size() + u8description.size());
+        8 + 64 + 16 + 8 + u8organization.size() + u8email.size() + u8country.size() + u8description.size());
 
-    result.insert(
-        result.end(),
-        {
-            'V',
-            'N',
-            'E',
-            'P',
-            'Q',
-            0,
-            0,
-            0,
-        });
+    result.insert(result.end(), currentKey, currentKey + sizeof(currentKey));
+    result.insert(result.end(), parentKey, parentKey + sizeof(parentKey));
 
     std::vector<uint8_t> issuedByte  = bigEndian8(issuedAt);
     std::vector<uint8_t> expiredByte = bigEndian8(expiredAt);
@@ -98,10 +106,34 @@ struct SignerMeta
     result.insert(result.end(), expiredByte.begin(), expiredByte.end());
 
     // Thêm thông tin công ty
-    result.insert(result.end(), u8company.begin(), u8company.end());
+    result.insert(result.end(), u8organization.begin(), u8organization.end());
     result.insert(result.end(), u8email.begin(), u8email.end());
     result.insert(result.end(), u8country.begin(), u8country.end());
     result.insert(result.end(), u8description.begin(), u8description.end());
+
+    Crypto::AES256::AES256Context context;
+    uint8_t                       iv[AES256_BLOCKLEN];
+    Crypto::randombytes(iv, sizeof(iv));
+
+    Crypto::AES256::init(&context, currentKey);
+    Crypto::AES256::counter(&context, iv, result.data() + 72, result.data() + 72, result.size() - 72);
+
+    std::vector<uint8_t> metadataSize = bigEndian8(result.size());
+    result.insert(result.end(), metadataSize.begin(), metadataSize.end());
+
+    // Mã nhận diện cho siêu dữ liệu "VNExos Post Quantum"
+    result.insert(
+        result.end(),
+        {
+            0,
+            0,
+            0,
+            'Q',
+            'P',
+            'E',
+            'N',
+            'V',
+        });
 
     return result;
   }
@@ -156,14 +188,15 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
   wprintf(L"[+] Vui lòng nhập thông tin người ký: \n");
 
   SignerMeta metadata;
-  metadata.company     = promptLine(L"Công ty      ");
-  metadata.email       = promptLine(L"Địa chỉ Email");
-  metadata.country     = promptLine(L"Quốc gia     ");
-  metadata.description = promptLine(L"Mô tả        ");
+  metadata.clean();
 
-  std::wstring daysString =
-      promptLine(L"Khoảng thời gian hiệu lực (0 = vĩnh viễn, mặc định: 365)");
-  int64_t validityDays = 365;
+  metadata.organization = promptLine(L"Tổ chức      ");
+  metadata.email        = promptLine(L"Địa chỉ Email");
+  metadata.country      = promptLine(L"Quốc gia     ");
+  metadata.description  = promptLine(L"Mô tả        ");
+
+  std::wstring daysString   = promptLine(L"Khoảng thời gian hiệu lực (0 = vĩnh viễn, mặc định: 365)");
+  int64_t      validityDays = 365;
   if (!daysString.empty())
   {
     validityDays = atoi(Converter::WStringToUtf8(daysString).c_str());
@@ -180,14 +213,14 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
   else
     metadata.expiredAt = metadata.issuedAt + (uint64_t)validityDays * 86400;
 
-  auto rawData = metadata.toBytes();
-  dump(rawData.data(), rawData.size(), L"Thông tin thô");
-
   uint8_t pk[DILITHIUM_PUBLICKEYBYTES];
   uint8_t sk[DILITHIUM_SECRETKEYBYTES];
 
   // Tạo cặp khóa
   Dilithium::generateKeyPair(pk, sk);
+
+  Crypto::VNExos::sha256(metadata.currentKey, sk, DILITHIUM_SECRETKEYBYTES);
+  auto rawData = metadata.toBytes();
 
   // Xuất ra tệp khóa riêng tư: [khóa thô][siêu dữ liệu]
   {
@@ -201,6 +234,9 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
     dump(skFile.data(), skFile.size());
   }
 
+  Crypto::VNExos::sha256(metadata.currentKey, pk, DILITHIUM_PUBLICKEYBYTES);
+  rawData = metadata.toBytes();
+
   // Xuất ra tệp khóa công khai: [khóa thô][siêu dữ liệu]
   {
     File::Content pkFile(pk, pk + DILITHIUM_PUBLICKEYBYTES);
@@ -213,7 +249,7 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
     dump(pkFile.data(), pkFile.size());
   }
 
-  std::wcout << L"[+] Người ký    : " << metadata.company
+  std::wcout << L"[+] Người ký    : " << metadata.organization
              << L" <" << metadata.email
              << L"> [" << metadata.country << L"]"
              << std::endl;

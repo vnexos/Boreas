@@ -76,6 +76,9 @@ void printUsage(const char* prog)
   wprintf(L"                   elf                          : Chuyển đổi từ định dạng tệp\n");
   wprintf(L"                                                  nhị phân ELF sang định dạng\n");
   wprintf(L"                                                  VNEX và ký vào tệp.\n");
+  wprintf(L"                   cert                         : Ký một khóa công khai bằng\n");
+  wprintf(L"                                                  khóa gốc để đánh dấu khóa đó\n");
+  wprintf(L"                                                  thành một khóa được tin cậy.\n");
   wprintf(L"                   (mặc định)                   : Ký vào cuối tệp.\n");
 }
 
