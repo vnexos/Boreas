@@ -72,14 +72,14 @@ struct SignerMeta
     memset(parentKey, 0, 32);
   }
 
-  bool is_expired() const
+  bool IsExpired() const
   {
     if (expiredAt == NEVER_EXPIRES)
       return false;
     return (uint64_t)time(NULL) > expiredAt;
   }
 
-  bool is_perpetual() const
+  bool IsPerpetual() const
   {
     return expiredAt == NEVER_EXPIRES;
   }
@@ -167,7 +167,9 @@ struct SignerMeta
 
   static uint16_t getBigEndian2(uint8_t*& arr)
   {
-    return ((*(arr++)) << 8) | *(arr++);
+    uint8_t high = *arr++;
+    uint8_t low  = *arr++;
+    return (static_cast<uint16_t>(high) << 8) | low;
   }
 
   static std::wstring getString(uint8_t*& arr)
@@ -247,7 +249,7 @@ static bool readCertMetadata(const std::wstring& certPath, SignerMeta& metadata)
   uint64_t metadataSize = 0;
   for (int i = 0; i < 8; ++i)
   {
-    metadataSize = (metadataSize << 8) | sizeBytes[i];
+    metadataSize = (metadataSize << 8) | static_cast<uint64_t>(sizeBytes[i]);
   }
 
   if (metadataSize > static_cast<uint64_t>(fileSize) || metadataSize < 120)
@@ -265,22 +267,22 @@ static bool readCertMetadata(const std::wstring& certPath, SignerMeta& metadata)
   inp.read(reinterpret_cast<char*>(metadata.parentKey), sizeof(metadata.parentKey));
 
   // Đọc phần dữ liệu bị mã hóa
-  uint64_t encryptedSize = metadataSize - 64 - AES256_BLOCKLEN;
-  uint8_t  encryptedPart[encryptedSize];
-  inp.read(reinterpret_cast<char*>(encryptedPart), encryptedSize);
+  uint64_t             encryptedSize = metadataSize - 64 - AES256_BLOCKLEN;
+  std::vector<uint8_t> encryptedPart(encryptedSize);
+  inp.read(reinterpret_cast<char*>(encryptedPart.data()), encryptedSize);
 
   // Đọc mảng khởi tạo AES
   uint8_t iv[AES256_BLOCKLEN];
   inp.read(reinterpret_cast<char*>(iv), sizeof(iv));
 
   // Giải mã khối siêu dữ liệu
-  uint8_t plaintext[encryptedSize];
+  std::vector<uint8_t> plaintext(encryptedSize);
 
   Crypto::AES256::AES256Context context;
   Crypto::AES256::init(&context, metadata.currentKey);
-  Crypto::AES256::counter(&context, iv, plaintext, encryptedPart, encryptedSize);
+  Crypto::AES256::counter(&context, iv, plaintext.data(), encryptedPart.data(), encryptedSize);
 
-  uint8_t* plaintextPtr = plaintext;
+  uint8_t* plaintextPtr = plaintext.data();
 
   // Đọc mã byte thô vào cấu trúc dữ liệu
   metadata.issuedAt     = SignerMeta::getBigEndian8(plaintextPtr);
@@ -329,7 +331,7 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
 
   metadata.issuedAt = (uint64_t)time(NULL);
   if (!validityDays)
-    metadata.expiredAt = UINT64_MAX;
+    metadata.expiredAt = SignerMeta::NEVER_EXPIRES;
   else
     metadata.expiredAt = metadata.issuedAt + (uint64_t)validityDays * 86400;
 
