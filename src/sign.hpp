@@ -22,12 +22,12 @@ namespace Sign {
 bool generateKey(const std::wstring& secKeyPath, const std::wstring& pubKeyPath);
 /**
  * Ký tệp
- * @param pubKeyPath đường dẫn tới khóa bí mật
+ * @param secKeyPath đường dẫn tới khóa bí mật
  * @param inPath đường dẫn tới tệp cần ký
  * @param outPath đường dẫn tới tệp sau khi ký
  * @return false nếu xãy ra lỗi trong quá trình mã hóa
  */
-bool signFile(const std::wstring& secKeyPath, const std::wstring& inPath, const std::wstring& outPath);
+bool signFile(const std::wstring& secKeyPath, const std::wstring& pubKeyPath, const std::wstring& inPath, const std::wstring& outPath);
 /**
  * Xác thực tệp đã ký
  * @param pubKeyPath đường dẫn tới khóa bí mật

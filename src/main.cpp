@@ -56,34 +56,49 @@ void printUsage(const char* prog)
   wprintf(L"  ╚═════════════════════════════════════════════╝\n");
   wprintf(L"Sử dụng:\n");
   wprintf(L"[*] Mã hóa tệp: %s -encrypt\n", prog);
-  wprintf(L"    -g <tệp khóa bí mật> <tệp khóa công khai>   : Tạo cặp khóa Kyber.\n");
+  wprintf(L"    -g <tệp khóa bí mật> <tệp khóa công khai>   : Sinh ra cặp khóa Kyber.\n");
   wprintf(L"    -e <tệp khóa công khai> <tệp vào> <tệp ra>  : Mã hóa tệp bằng khóa công khai\n");
   wprintf(L"                                                  Kyber kết hợp AES-256.\n");
   wprintf(L"    -d <tệp khóa bí mật> <tệp vào> <tệp ra>     : Giải mã tệp bằng khóa bí mật\n");
   wprintf(L"                                                  Kyber kết hợp AES-256.\n");
   wprintf(L"[*] Ký tệp:     %s -sign\n", prog);
-  wprintf(L"    -g <tệp khóa riêng tư> <tệp khóa công khai> : Tạo cặp khóa Dilithium.\n");
-  wprintf(L"    -s <tệp khóa riêng tư> <tệp vào> <tệp ra>   : Ký tệp bằng khóa riêng tư\n");
-  wprintf(L"                                                  Dilithium.\n");
-  wprintf(L"    -x <tệp khóa công khai> <tệp vào> <tệp ra>  : Xác minh tệp đã ký bằng thuật\n");
+  wprintf(L"    -g <tệp khóa riêng tư> <tệp khóa công khai> : Sinh ra cặp khóa Dilithium.\n");
+  wprintf(L"    -s <tệp khóa riêng tư> <tệp khóa công khai> : Ký tệp bằng khóa riêng tư và\n");
+  wprintf(L"       <tệp vào> <tệp ra>                         khóa công khai Dilithium.\n");
+  wprintf(L"    -x <tệp khóa công khai> <tệp vào>           : Xác minh tệp đã ký bằng thuật\n");
   wprintf(L"                                                  toán Dilithium.\n");
   wprintf(L"    -r <tệp khóa công khai>                     : Đọc thông tin trong khóa công\n");
   wprintf(L"                                                  khai.\n");
   wprintf(L"[*] Cờ bổ sung: \n");
-  wprintf(L"    --verbose [-v]                              : Xả ra mã Thập lục phân để dễ\n");
+  wprintf(L"    --verbose   [-v]                            : Xả ra mã Thập lục phân để dễ\n");
   wprintf(L"                                                  so sánh.\n");
-  wprintf(L"    --type    [-t] <loại tệp>                   : Xác định loại tệp cần ký.\n");
-  wprintf(L"                   elf                          : Chuyển đổi từ định dạng tệp\n");
+  wprintf(L"    --type      [-t] <loại tệp>                 : Xác định loại tệp cần ký.\n");
+  wprintf(L"                     elf                        : Chuyển đổi từ định dạng tệp\n");
   wprintf(L"                                                  nhị phân ELF sang định dạng\n");
   wprintf(L"                                                  VNEX và ký vào tệp.\n");
-  wprintf(L"                   cert                         : Ký một khóa công khai bằng\n");
+  wprintf(L"                     cert                       : Ký một khóa công khai bằng\n");
   wprintf(L"                                                  khóa gốc để đánh dấu khóa đó\n");
   wprintf(L"                                                  thành một khóa được tin cậy.\n");
-  wprintf(L"                   (mặc định)                   : Ký vào cuối tệp.\n");
+  wprintf(L"                     (mặc định)                 : Ký vào cuối tệp.\n");
+  wprintf(L"    --dilithium [-k] <loại khóa>                : Xác định loại khóa dilithium\n");
+  wprintf(L"                                                  mà chương trình sẽ sinh ra.\n");
+  wprintf(L"                     intermediate               : Sinh ra khóa trung gian - Khóa\n");
+  wprintf(L"                                                  này dùng để ký các khóa đầu\n");
+  wprintf(L"                                                  cuối.\n");
+  wprintf(L"                     end-key                    : Sinh ra khóa đầu cuối - Khóa\n");
+  wprintf(L"                                                  này sẽ dành cho các doanh\n");
+  wprintf(L"                                                  nghiệp hoặc lập trình viên để\n");
+  wprintf(L"                                                  ký các ứng dụng.\n");
+  wprintf(L"                     (mặc định)                 : Sinh ra ra khóa gốc - Khóa này\n");
+  wprintf(L"                                                  là khóa độc quyền của VNExos\n");
+  wprintf(L"                                                  và sẽ không được tin cậy. CHỈ\n");
+  wprintf(L"                                                  NÊN SINH KHÓA NÀY VỚI MỤC ĐÍCH\n");
+  wprintf(L"                                                  NGHIÊN CỨU.\n");
 }
 
 bool         bDumpFlag = false;
-std::wstring strType;
+std::wstring signType;
+uint8_t      dilithiumKeyType = 0;
 
 int main(int argc, char* argv[])
 {
@@ -112,12 +127,19 @@ int main(int argc, char* argv[])
     if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0)
       bDumpFlag = true;
     else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--type") == 0)
-      strType = std::move(Converter::Utf8ToWString(argv[++i]));
-    else
+      signType = std::move(Converter::Utf8ToWString(argv[++i]));
+    else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--dilithium") == 0)
+    {
+      const char* keyType = argv[++i];
+      if (strcmp(keyType, "intermediate") == 0)
+        dilithiumKeyType = 0x01;
+      else if (strcmp(keyType, "end-key") == 0)
+        dilithiumKeyType = 0x02;
+      else
+        dilithiumKeyType = 0x00;
+    } else
       cleanArgv.push_back(Converter::Utf8ToWString(argv[i]));
   }
-
-  std::wcout << strType << std::endl;
 
   if (cleanArgv.size() > 1)
   {
@@ -143,6 +165,9 @@ int main(int argc, char* argv[])
       if (cleanArgv[2].compare(L"-g") == 0 && cleanArgv.size() == 5)
       {
         return !Sign::generateKey(cleanArgv[3], cleanArgv[4]);
+      } else if (cleanArgv[2].compare(L"-s") == 0 && cleanArgv.size() == 7)
+      {
+        return !Sign::signFile(cleanArgv[3], cleanArgv[4], cleanArgv[5], cleanArgv[6]);
       } else
       {
         wprintf(L"[-] Lệnh sử dụng -sign không hợp lệ!\n");
