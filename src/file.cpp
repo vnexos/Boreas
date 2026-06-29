@@ -71,7 +71,7 @@ bool File::HashFile(const std::wstring& filePath, std::vector<uint8_t>& outputHa
 {
   // Mở tệp ở chế độ đọc nhị phân
 #if defined(_WIN32)
-  std::ifstream inp(fileName, std::ios::in | std::ios::binary | std::ios::ate);
+  std::ifstream inp(filePath, std::ios::in | std::ios::binary | std::ios::ate);
 #else
   std::string   utf8FileName(filePath.begin(), filePath.end());
   std::ifstream inp(utf8FileName, std::ios::in | std::ios::binary);
