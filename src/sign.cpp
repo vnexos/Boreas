@@ -37,10 +37,10 @@ extern std::wstring signType;
 extern uint8_t      dilithiumKeyType;
 
 static constexpr uint8_t rootKey[32] = {
-    0x19, 0xc9, 0x56, 0xeb, 0x3e, 0x08, 0xbb, 0x81,
-    0xeb, 0xd0, 0x83, 0x18, 0x61, 0xb4, 0x23, 0xc1,
-    0x11, 0x2d, 0x0d, 0x4e, 0xcf, 0xc3, 0x50, 0xd8,
-    0x34, 0x6b, 0x4e, 0x9f, 0x34, 0x4c, 0x64, 0x62};
+    0xa3, 0xa0, 0xfb, 0x7d, 0x50, 0x26, 0xc7, 0xb2,
+    0x05, 0x2e, 0xc3, 0x31, 0xa5, 0xcc, 0xdc, 0x5b,
+    0x15, 0x74, 0x3c, 0x14, 0x2e, 0xfc, 0x03, 0xc2,
+    0x59, 0x74, 0x3e, 0xb5, 0x5d, 0x88, 0x89, 0x16};
 
 void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring());
 
@@ -109,7 +109,6 @@ struct SignerMeta
     result.reserve(
         8 + 64 + 16 + 8 + AES256_BLOCKLEN + u8organization.size() + u8email.size() + u8country.size() + u8description.size());
 
-    result.insert(result.end(), currentKey, currentKey + sizeof(currentKey));
     result.insert(result.end(), parentKey, parentKey + sizeof(parentKey));
 
     std::vector<uint8_t> issuedByte  = bigEndian8(issuedAt);
@@ -130,9 +129,10 @@ struct SignerMeta
     Crypto::randombytes(iv, sizeof(iv));
 
     Crypto::AES256::init(&context, currentKey);
-    Crypto::AES256::counter(&context, iv, result.data() + 64, result.data() + 64, result.size() - 64);
+    Crypto::AES256::counter(&context, iv, result.data() + 32, result.data() + 32, result.size() - 32);
 
     result.insert(result.end(), iv, iv + sizeof(iv));
+    dump(iv, sizeof(iv), L"Mảng khởi tạo");
 
     std::vector<uint8_t> metadataSize = bigEndian8(result.size());
     result.insert(result.end(), metadataSize.begin(), metadataSize.end());
@@ -238,7 +238,7 @@ static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metad
   std::streamsize fileSize = inp.tellg();
   if (fileSize < 120)
   {
-    std::wcout << "[-] Tệp quá nhỏ, không đúng cấu trúc!" << std::endl;
+    std::wcout << L"[-] Tệp quá nhỏ, không đúng cấu trúc!" << std::endl;
     return 0;
   }
 
@@ -284,9 +284,9 @@ static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metad
     metadataSize = (metadataSize << 8) | static_cast<uint64_t>(sizeBytes[i]);
   }
 
-  if (metadataSize > static_cast<uint64_t>(fileSize) || metadataSize < 120)
+  if (metadataSize > static_cast<uint64_t>(fileSize) || metadataSize < 88)
   {
-    std::wcout << "[-] Kích thước siêu dữ liệu không hợp lệ." << std::endl;
+    std::wcout << L"[-] Kích thước siêu dữ liệu không hợp lệ." << std::endl;
     return 0;
   }
 
@@ -295,17 +295,24 @@ static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metad
 
   // Đọc các mã định dạng
   inp.seekg(metaStartOffset);
-  inp.read(reinterpret_cast<char*>(metadata.currentKey), sizeof(metadata.currentKey));
   inp.read(reinterpret_cast<char*>(metadata.parentKey), sizeof(metadata.parentKey));
 
   // Đọc phần dữ liệu bị mã hóa
-  uint64_t             encryptedSize = metadataSize - 64 - AES256_BLOCKLEN;
+  uint64_t             encryptedSize = metadataSize - 32 - AES256_BLOCKLEN;
   std::vector<uint8_t> encryptedPart(encryptedSize);
   inp.read(reinterpret_cast<char*>(encryptedPart.data()), encryptedSize);
 
   // Đọc mảng khởi tạo AES
   uint8_t iv[AES256_BLOCKLEN];
   inp.read(reinterpret_cast<char*>(iv), sizeof(iv));
+
+  // Đọc mảng khóa và băm nó ra
+  inp.seekg(0);
+  std::vector<uint8_t> pk(DILITHIUM_PUBLICKEYBYTES);
+  inp.read(reinterpret_cast<char*>(pk.data()), pk.size());
+
+  Crypto::VNExos::sha256(metadata.currentKey, pk.data(), pk.size());
+  dump(iv, sizeof(iv), L"Mảng khởi tạo");
 
   // Giải mã khối siêu dữ liệu
   std::vector<uint8_t> plaintext(encryptedSize);
@@ -403,6 +410,7 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
                << L" (" << (DILITHIUM_PUBLICKEYBYTES + rawData.size()) << L" byte)"
                << std::endl;
     dump(pkFile.data(), pkFile.size());
+    dump(metadata.currentKey, sizeof(metadata.currentKey), L"Mã băm khóa công khai");
   }
 
   std::wcout << L"[+] Người ký    : " << metadata.organization
@@ -479,7 +487,7 @@ bool signCertFile(
           File::Content(
               metadata.currentKey,
               metadata.currentKey + sizeof(metadata.currentKey)),
-          metadataOffset + sizeof(metadata.currentKey)))
+          metadataOffset))
   {
     std::wcout << L"[-] Không thể ghi khóa cha vào tệp: " << outPath << std::endl;
     return false;
