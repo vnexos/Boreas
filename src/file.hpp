@@ -21,28 +21,44 @@ using Content = std::vector<uint8_t>;
 
 /**
  * Viết nội dung là một mảng byte vào tệp.
- * @param fileName    Tên của tệp
+ * @param filePath    Đường dẫn của tệp
  * @param fileContent Nội dung của tệp
+ * @param offset      Vị trí bắt đầu đọc tệp
  * @return false nếu có lỗi xãy ra trong quá trình ghi tệp
  */
-bool Write(const std::wstring& fileName, const Content& fileContent);
+bool Write(const std::wstring& filePath, const Content& fileContent, uint64_t offset = 0);
+
+/**
+ * Thêm một mảng byte vào cuối tệp.
+ * @param filePath    Đường dẫn của tệp
+ * @param fileContent Nội dung của tệp
+ * @return false nếu có lỗi xãy ra trong quá trình thêm vào cuối tệp
+ */
+bool Append(const std::wstring& filePath, const Content& fileContent);
 
 /**
  * Đọc nội dung của tệp vào một mảng byte.
- * @param fileName Tên của tệp
+ * @param filePath    Đường dẫn của tệp
  * @param fileContent Nội dung của tệp đã được đọc
  * @return false nếu có lỗi xãy ra trong quá trình đọc tệp
  */
-bool Read(const std::wstring& fileName, Content& fileContent);
+bool Read(const std::wstring& filePath, Content& fileContent);
 
 /**
  * Băm một tệp bằng thuật toán SHAV-1024.
- * @param fileName Tên của tệp
+ * @param filePath    Đường dẫn của tệp
  * @param fileContent Nội dung của tệp đã được đọc
  * @return false nếu có lỗi xãy ra trong quá trình đọc tệp
  */
-bool HashFile(const std::wstring& filePath, std::vector<uint8_t>& outputHash);
+bool Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash);
 
+/**
+ * Sao chép tệp
+ * @param inPath  Tệp đầu vào
+ * @param outPath Tệp đầu ra
+ * @return false nếu có lỗi xãy ra trong quá trình sao chép tệp
+ */
+bool Copy(const std::wstring& inPath, const std::wstring& outPath);
 } // namespace File
 
 #endif // __FILE_HPP

@@ -9,22 +9,25 @@
  */
 #include "file.hpp"
 #include "crypto/sha3.hpp"
+#include <filesystem>
 #include <fstream>
 
-bool File::Write(const std::wstring& fileName, const File::Content& fileContent)
+bool File::Write(const std::wstring& filePath, const File::Content& fileContent, uint64_t offset)
 {
   // Mở tệp ở chế độ ghi nhị phân (std::ios::binary)
   // Nếu dùng trên Windows, std::ofstream hỗ trợ nhận std::wstring trực tiếp
 #if defined(_WIN32)
-  std::ofstream out(fileName, std::ios::out | std::ios::binary);
+  std::ofstream out(filePath, std::ios::in | std::ios::out | std::ios::binary);
 #else
-  std::string   utf8FileName(fileName.begin(), fileName.end());
-  std::ofstream out(utf8FileName, std::ios::out | std::ios::binary);
+  std::string   utf8FilePath(filePath.begin(), filePath.end());
+  std::ofstream out(utf8FilePath, std::ios::in | std::ios::out | std::ios::binary);
 #endif
 
   if (!out)
     return false;
 
+  if (offset != 0)
+    out.seekp(offset, std::ios::beg);
   // Ghi toàn bộ mảng byte vào tệp
   if (!fileContent.empty())
     out.write(reinterpret_cast<const char*>(fileContent.data()), fileContent.size());
@@ -33,15 +36,35 @@ bool File::Write(const std::wstring& fileName, const File::Content& fileContent)
   return true;
 }
 
-bool File::Read(const std::wstring& fileName, File::Content& fileContent)
+bool File::Append(const std::wstring& filePath, const Content& fileContent)
 {
+  // Mở tệp ở chế độ ghi nhị phân (std::ios::binary)
+  // Nếu dùng trên Windows, std::ofstream hỗ trợ nhận std::wstring trực tiếp
+#if defined(_WIN32)
+  std::ofstream out(filePath, std::ios::app | std::ios::binary);
+#else
+  std::string   utf8FilePath(filePath.begin(), filePath.end());
+  std::ofstream out(utf8FilePath, std::ios::app | std::ios::binary);
+#endif
 
+  if (!out)
+    return false;
+
+  if (!fileContent.empty())
+    out.write(reinterpret_cast<const char*>(fileContent.data()), fileContent.size());
+
+  out.close();
+  return true;
+}
+
+bool File::Read(const std::wstring& filePath, File::Content& fileContent)
+{
   // Mở tệp ở chế độ đọc nhị phân và dịch con trỏ xuống cuối tệp (std::ios::ate) để lấy kích thước
 #if defined(_WIN32)
-  std::ifstream inp(fileName, std::ios::in | std::ios::binary | std::ios::ate);
+  std::ifstream inp(filePath, std::ios::in | std::ios::binary | std::ios::ate);
 #else
-  std::string   utf8FileName(fileName.begin(), fileName.end());
-  std::ifstream inp(utf8FileName, std::ios::in | std::ios::binary | std::ios::ate);
+  std::string   utf8FilePath(filePath.begin(), filePath.end());
+  std::ifstream inp(utf8FilePath, std::ios::in | std::ios::binary | std::ios::ate);
 #endif
 
   // Trả về vector rỗng nếu không mở được tệp
@@ -67,14 +90,14 @@ bool File::Read(const std::wstring& fileName, File::Content& fileContent)
   return true;
 }
 
-bool File::HashFile(const std::wstring& filePath, std::vector<uint8_t>& outputHash)
+bool File::Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash)
 {
   // Mở tệp ở chế độ đọc nhị phân
 #if defined(_WIN32)
   std::ifstream inp(filePath, std::ios::in | std::ios::binary | std::ios::ate);
 #else
-  std::string   utf8FileName(filePath.begin(), filePath.end());
-  std::ifstream inp(utf8FileName, std::ios::in | std::ios::binary);
+  std::string   utf8FilePath(filePath.begin(), filePath.end());
+  std::ifstream inp(utf8FilePath, std::ios::in | std::ios::binary);
 #endif
 
   if (!inp)
@@ -103,5 +126,22 @@ bool File::HashFile(const std::wstring& filePath, std::vector<uint8_t>& outputHa
   Crypto::Keccak::finalize(&state, 0x25);
   Crypto::Keccak::squeeze(outputHash.data(), outputHash.size(), &state);
 
+  inp.close();
   return true;
+}
+
+bool File::Copy(const std::wstring& inPath, const std::wstring& outPath)
+{
+  try
+  {
+    if (inPath.compare(outPath) == 0)
+      return true;
+    return std::filesystem::copy_file(
+        inPath,
+        outPath,
+        std::filesystem::copy_options::overwrite_existing);
+  } catch (const std::filesystem::filesystem_error&)
+  {
+    return false;
+  }
 }

@@ -36,6 +36,12 @@
 extern std::wstring signType;
 extern uint8_t      dilithiumKeyType;
 
+static constexpr uint8_t rootKey[32] = {
+    0x19, 0xc9, 0x56, 0xeb, 0x3e, 0x08, 0xbb, 0x81,
+    0xeb, 0xd0, 0x83, 0x18, 0x61, 0xb4, 0x23, 0xc1,
+    0x11, 0x2d, 0x0d, 0x4e, 0xcf, 0xc3, 0x50, 0xd8,
+    0x34, 0x6b, 0x4e, 0x9f, 0x34, 0x4c, 0x64, 0x62};
+
 void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring());
 
 /**
@@ -59,6 +65,7 @@ struct SignerMeta
   uint64_t     expiredAt = 0;
   uint8_t      currentKey[32];
   uint8_t      parentKey[32];
+  uint8_t      type = dilithiumKeyType;
   std::wstring organization;
   std::wstring email;
   std::wstring country;
@@ -207,7 +214,12 @@ struct SignerMeta
   }
 };
 
-static bool readCertMetadata(const std::wstring& certPath, SignerMeta& metadata)
+/**
+ * @param certPath Đường dẫn tới tệp chứng chỉ
+ * @param metadata Đầu ra của khối Siêu dữ liệu
+ * @return Trả về vị trí bắt đầu của khối siêu dữ liệu
+ */
+static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metadata, bool* signedCert = 0)
 {
 // Mở tệp ở chế độ đọc nhị phân và dịch con trỏ xuống cuối tệp (std::ios::ate) để lấy kích thước
 #if defined(_WIN32)
@@ -219,27 +231,47 @@ static bool readCertMetadata(const std::wstring& certPath, SignerMeta& metadata)
 
   if (!inp)
   {
-    std::wcout << "[-] Không thể mở tệp khóa để đọc." << std::endl;
-    return false;
+    std::wcout << L"[-] Không thể mở tệp khóa để đọc." << std::endl;
+    return 0;
   }
 
   std::streamsize fileSize = inp.tellg();
   if (fileSize < 120)
   {
     std::wcout << "[-] Tệp quá nhỏ, không đúng cấu trúc!" << std::endl;
-    return false;
+    return 0;
   }
 
   // Kiểm tra mã nhận diện
   uint64_t magic;
   inp.seekg(fileSize - 8);
   inp.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+  uint64_t oldFileSize;
 
   if ((magic & ~(uint64_t)0xff) != 0x564e455051000000)
   {
-    std::wcout << "[-] Mã nhận diện không hợp lệ." << std::endl;
-    return false;
+    // Check lại xem tệp chứng chỉ đã được ký hay chưa
+    inp.seekg(fileSize - DILITHIUM_BYTES - 8);
+    inp.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    if ((magic & ~(uint64_t)0xff) != 0x564e455051000000)
+    {
+      std::wcout << L"[-] Mã nhận diện không hợp lệ." << std::endl;
+      return 0;
+    }
+    oldFileSize  = fileSize;
+    fileSize    -= DILITHIUM_BYTES;
+    if (signedCert)
+      *signedCert = true;
+  } else
+  {
+    if (signedCert)
+      *signedCert = false;
   }
+
+  // Tạm thời chưa sử dụng
+  (void)oldFileSize;
+
+  metadata.type = magic & 0xff;
 
   // Kiểm tra và lấy kích thước siêu dữ liệu
   uint8_t sizeBytes[8];
@@ -255,7 +287,7 @@ static bool readCertMetadata(const std::wstring& certPath, SignerMeta& metadata)
   if (metadataSize > static_cast<uint64_t>(fileSize) || metadataSize < 120)
   {
     std::wcout << "[-] Kích thước siêu dữ liệu không hợp lệ." << std::endl;
-    return false;
+    return 0;
   }
 
   // Tính toán mốc bắt đầu của khối Siêu dữ liệu tính từ đầu tệp
@@ -292,7 +324,9 @@ static bool readCertMetadata(const std::wstring& certPath, SignerMeta& metadata)
   metadata.country      = SignerMeta::getString(plaintextPtr);
   metadata.description  = SignerMeta::getString(plaintextPtr);
 
-  return true;
+  inp.close();
+
+  return metaStartOffset;
 }
 
 static std::wstring promptLine(const std::wstring& label)
@@ -391,6 +425,101 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
   return true;
 }
 
+bool signCertFile(
+    const std::wstring& secKeyPath,
+    const std::wstring& pubKeyPath,
+    const std::wstring& inPath,
+    const std::wstring& outPath,
+    const SignerMeta&   metadata,
+    uint64_t            metadataOffset)
+{
+  (void)pubKeyPath;
+
+  SignerMeta inMeta;
+  bool       signedCert;
+  uint64_t   inMetaOffset = readCertMetadata(inPath, inMeta, &signedCert);
+
+  if (inMetaOffset == 0)
+  {
+    return false;
+  }
+
+  if (signedCert)
+  {
+    std::wcout << L"[-] Tệp chứng chỉ đã được ký từ trước: " << inPath << std::endl;
+    return false;
+  }
+
+  if (inMeta.type == 0x00)
+  {
+    std::wcout << L"[-] Bạn không thể ký khóa gốc!" << std::endl;
+  }
+  if (metadata.type == 0x02)
+  {
+    if (inMeta.type == 0x01)
+    {
+      std::wcout << L"[-] Bạn không thể ký tệp khóa trung gian bằng khóa đầu cuối!" << std::endl;
+      return false;
+    } else if (inMeta.type == 0x02)
+    {
+      std::wcout << L"[-] Khóa đầu cuối không thể được ký bằng một khóa đầu cuối khác!" << std::endl;
+      return false;
+    }
+  }
+
+  // Ghi khóa cha vào tệp cần ký
+  if (!File::Copy(inPath, outPath))
+  {
+    std::wcout << L"[-] Không thể sao chép tệp: " << inPath << " -> " << outPath << std::endl;
+    return false;
+  }
+
+  if (!File::Write(
+          outPath,
+          File::Content(
+              metadata.currentKey,
+              metadata.currentKey + sizeof(metadata.currentKey)),
+          metadataOffset + sizeof(metadata.currentKey)))
+  {
+    std::wcout << L"[-] Không thể ghi khóa cha vào tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  // Băm tệp cần ký
+  std::vector<uint8_t> certHash;
+  if (!File::Hash(outPath, certHash))
+  {
+    std::wcout << L"[-] Không thể băm tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  // Đọc tệp khóa bí mật
+  std::vector<uint8_t> secretKey;
+  if (!File::Read(secKeyPath, secretKey))
+  {
+    std::wcout << L"[-] Không thể đọc tệp: " << secKeyPath << std::endl;
+    return false;
+  }
+
+  // Tạo chữ ký cho tệp
+  std::vector<uint8_t> signature(DILITHIUM_BYTES);
+  size_t               signatureLength;
+  Dilithium::sign(
+      signature.data(), &signatureLength,
+      certHash.data(), certHash.size(),
+      secretKey.data());
+
+  if (!File::Append(outPath, signature))
+  {
+    std::wcout << L"[-] Không thể thêm dữ liệu vào tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  std::wcout << L"[+] Ký thành công vào tệp chứng chỉ: " << outPath << std::endl;
+
+  return true;
+}
+
 /**
  * Định dạng của tệp sau khi ký:
  * - Đối với khóa phân cấp:
@@ -408,9 +537,9 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
  *     [2    byte: Độ dài mô tả (big-endian)][mô tả]
  *   ] Vùng bị mã hóa
  *     [16   byte: Mảng khởi tạo của AES]
- *     [4627 byte: Chữ ký]
  *     [8    byte: Độ dài khối siêu dữ liệu (big-endian)]
  *     [8    byte: mã nhận diện 'V', 'N', 'E', 'P', 'Q', 'S', 0, x]
+ *     [4627 byte: Chữ ký]
  */
 bool Sign::signFile(
     const std::wstring& secKeyPath,
@@ -419,10 +548,19 @@ bool Sign::signFile(
     const std::wstring& outPath)
 {
   SignerMeta metadata;
-  std::wcout << readCertMetadata(pubKeyPath, metadata) << std::endl;
+  uint64_t   metadataOffset = readCertMetadata(pubKeyPath, metadata);
+
+  if (metadataOffset == 0)
+  {
+    std::wcout << L"[-] Tệp khóa cha không hợp lệ!" << std::endl;
+    return false;
+  }
 
   if (signType.compare(L"cert") == 0)
   {
+    return signCertFile(
+        secKeyPath, pubKeyPath,
+        inPath, outPath, metadata, metadataOffset);
   }
   return true;
 }
