@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <string.h>
 #include <string>
@@ -107,7 +108,7 @@ struct SignerMeta
     // 8 byte  cho mã nhận diện
     // 16 byte chứa mảng khởi tạo cho thuật toán AES (AES256_BLOCKLEN)
     result.reserve(
-        8 + 64 + 16 + 8 + AES256_BLOCKLEN + u8organization.size() + u8email.size() + u8country.size() + u8description.size());
+        8 + 32 + 16 + 8 + AES256_BLOCKLEN + u8organization.size() + u8email.size() + u8country.size() + u8description.size());
 
     result.insert(result.end(), parentKey, parentKey + sizeof(parentKey));
 
@@ -205,7 +206,7 @@ struct SignerMeta
   static std::wstring formatTime(uint64_t ts)
   {
     if (ts == NEVER_EXPIRES)
-      return L"Never (perpetual)";
+      return L"(Không bao giờ)";
     time_t     t  = (time_t)ts;
     struct tm* tm = gmtime(&t);
     char       buf[64];
@@ -284,7 +285,7 @@ static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metad
     metadataSize = (metadataSize << 8) | static_cast<uint64_t>(sizeBytes[i]);
   }
 
-  if (metadataSize > static_cast<uint64_t>(fileSize) || metadataSize < 88)
+  if (metadataSize > static_cast<uint64_t>(fileSize) || metadataSize < 72)
   {
     std::wcout << L"[-] Kích thước siêu dữ liệu không hợp lệ." << std::endl;
     return 0;
@@ -433,13 +434,12 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
   return true;
 }
 
-bool signCertFile(
+static bool signCertFile(
     const std::wstring& secKeyPath,
     const std::wstring& pubKeyPath,
     const std::wstring& inPath,
     const std::wstring& outPath,
-    const SignerMeta&   metadata,
-    uint64_t            metadataOffset)
+    const SignerMeta&   metadata)
 {
   (void)pubKeyPath;
 
@@ -452,6 +452,12 @@ bool signCertFile(
     return false;
   }
 
+  if (metadata.IsExpired())
+  {
+    std::wcout << L"[-] Khóa cha đã hết hạn, không thể dùng để ký!" << std::endl;
+    return false;
+  }
+
   if (signedCert)
   {
     std::wcout << L"[-] Tệp chứng chỉ đã được ký từ trước: " << inPath << std::endl;
@@ -461,6 +467,7 @@ bool signCertFile(
   if (inMeta.type == 0x00)
   {
     std::wcout << L"[-] Bạn không thể ký khóa gốc!" << std::endl;
+    return false;
   }
   if (metadata.type == 0x02)
   {
@@ -487,7 +494,7 @@ bool signCertFile(
           File::Content(
               metadata.currentKey,
               metadata.currentKey + sizeof(metadata.currentKey)),
-          metadataOffset))
+          inMetaOffset))
   {
     std::wcout << L"[-] Không thể ghi khóa cha vào tệp: " << outPath << std::endl;
     return false;
@@ -568,7 +575,68 @@ bool Sign::signFile(
   {
     return signCertFile(
         secKeyPath, pubKeyPath,
-        inPath, outPath, metadata, metadataOffset);
+        inPath, outPath, metadata);
   }
+  return true;
+}
+
+bool Sign::readMetadata(const std::wstring& pubKeyPath)
+{
+  SignerMeta metadata;
+  bool       signedCert = false;
+  uint64_t   offset     = readCertMetadata(pubKeyPath, metadata, &signedCert);
+
+  if (offset == 0)
+  {
+    return false;
+  }
+
+  std::wcout << L"\n  ╔═════════════════════════════════════════════╗\n";
+  std::wcout << L"  ║        THÔNG TIN CHỨNG CHỈ DILITHIUM        ║\n";
+  std::wcout << L"  ╚═════════════════════════════════════════════╝\n";
+  std::wcout << L"[+] Loại khóa    : ";
+  if (metadata.type == 0x00)
+    std::wcout << L"Khóa gốc (Root Key)" << std::endl;
+  else if (metadata.type == 0x01)
+    std::wcout << L"Khóa trung gian (Intermediate Key)" << std::endl;
+  else if (metadata.type == 0x02)
+    std::wcout << L"Khóa đầu cuối (End Key)" << std::endl;
+  else
+    std::wcout << L"Không xác định (0x" << std::hex << (int)metadata.type << std::dec << L")" << std::endl;
+
+  std::wcout << L"[+] Trạng thái   : " << (signedCert ? L"Đã ký (Signed)" : L"Chưa ký (Self-signed/CSR)") << std::endl;
+  std::wcout << L"[+] Tổ chức      : " << metadata.organization << std::endl;
+  std::wcout << L"[+] Địa chỉ Email: " << metadata.email << std::endl;
+  std::wcout << L"[+] Quốc gia     : " << metadata.country << std::endl;
+  std::wcout << L"[+] Mô tả        : " << metadata.description << std::endl;
+  std::wcout << L"[+] Ngày cấp     : " << SignerMeta::formatTime(metadata.issuedAt) << std::endl;
+  std::wcout << L"[+] Ngày hết hạn : " << SignerMeta::formatTime(metadata.expiredAt);
+  if (metadata.IsExpired())
+    std::wcout << L" (Đã hết hạn - Expired)";
+  std::wcout << std::endl;
+
+  std::wcout << L"[+] Mã khóa hiện tại (SKI): ";
+  for (int i = 0; i < 32; ++i)
+    std::wcout << std::hex << std::setw(2) << std::setfill(L'0') << (int)metadata.currentKey[i];
+  std::wcout << std::dec << std::setfill(L' ') << std::endl;
+
+  std::wcout << L"[+] Mã khóa cha (AKI)     : ";
+  bool hasParent = false;
+  for (int i = 0; i < 32; ++i)
+  {
+    if (metadata.parentKey[i] != 0)
+      hasParent = true;
+  }
+  if (hasParent)
+  {
+    for (int i = 0; i < 32; ++i)
+      std::wcout << std::hex << std::setw(2) << std::setfill(L'0') << (int)metadata.parentKey[i];
+    std::wcout << std::dec << std::setfill(L' ') << std::endl;
+  } else
+  {
+    std::wcout << L"(Không có - Khóa gốc)" << std::endl;
+  }
+  std::wcout << std::endl;
+
   return true;
 }

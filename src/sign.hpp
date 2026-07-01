@@ -30,6 +30,12 @@ bool generateKey(const std::wstring& secKeyPath, const std::wstring& pubKeyPath)
  */
 bool signFile(const std::wstring& secKeyPath, const std::wstring& pubKeyPath, const std::wstring& inPath, const std::wstring& outPath);
 /**
+ * Đọc và hiển thị thông tin chứng chỉ
+ * @param pubKeyPath đường dẫn tới tệp khóa công khai
+ * @return false nếu xảy ra lỗi trong quá trình đọc
+ */
+bool readMetadata(const std::wstring& pubKeyPath);
+/**
  * Xác thực tệp đã ký
  * @param pubKeyPath đường dẫn tới khóa bí mật
  * @param inPath đường dẫn tới tệp đã ký cần xác thực
