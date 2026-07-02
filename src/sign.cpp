@@ -38,10 +38,10 @@ extern std::wstring signType;
 extern uint8_t      dilithiumKeyType;
 
 static constexpr uint8_t rootKey[32] = {
-    0xe8, 0x5e, 0x32, 0xb3, 0x96, 0x00, 0x59, 0x74,
-    0xc1, 0xb1, 0x99, 0xf3, 0xdb, 0xb9, 0xe0, 0x6f,
-    0x64, 0xc6, 0x60, 0x9e, 0x49, 0x99, 0x9f, 0xaa,
-    0x78, 0x95, 0xac, 0x56, 0xf2, 0xec, 0x29, 0x54};
+    0x56, 0x15, 0xaf, 0xba, 0x84, 0x68, 0xaa, 0x87,
+    0xb5, 0xdf, 0xd0, 0x97, 0xf2, 0x63, 0x73, 0xb6,
+    0xf7, 0x69, 0x33, 0xe2, 0xa4, 0x21, 0x1f, 0xce,
+    0x09, 0x4e, 0x11, 0x51, 0x74, 0xae, 0x37, 0xa9};
 
 void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring());
 
@@ -74,6 +74,7 @@ struct SignerMeta
   uint64_t     expiredAt = 0;
   uint8_t      currentKey[32];
   uint8_t      parentKey[32];
+  uint8_t      parentCertHash[32];
   uint8_t      type = dilithiumKeyType;
   std::wstring organization;
   std::wstring email;
@@ -86,6 +87,7 @@ struct SignerMeta
   {
     memset(currentKey, 0, 32);
     memset(parentKey, 0, 32);
+    memset(parentCertHash, 0, 32);
   }
 
   bool IsExpired() const
@@ -109,16 +111,17 @@ struct SignerMeta
     std::vector<uint8_t> u8country      = stringToMetadataBytes(Converter::WStringToUtf8(country));
     std::vector<uint8_t> u8description  = stringToMetadataBytes(Converter::WStringToUtf8(description));
 
-    // 64 byte cho SHA-256 của khóa và của khóa cha
+    // 64 byte cho mã băm khóa cha và mã băm chứng chỉ cha
     // 16 byte cho ngày cấp phát và ngày hết hạn
     // x byte  tổng cộng để cho kích thước của 4 thông tin: u8organization.size() + u8email.size() + u8country.size() + u8description.size()
     // 8 byte  Kích thước khối siêu dữ liệu
     // 8 byte  cho mã nhận diện
     // 16 byte chứa mảng khởi tạo cho thuật toán AES (AES256_BLOCKLEN)
     result.reserve(
-        8 + 32 + 16 + 8 + AES256_BLOCKLEN + u8organization.size() + u8email.size() + u8country.size() + u8description.size());
+        8 + 64 + 16 + 8 + AES256_BLOCKLEN + u8organization.size() + u8email.size() + u8country.size() + u8description.size());
 
     result.insert(result.end(), parentKey, parentKey + sizeof(parentKey));
+    result.insert(result.end(), parentCertHash, parentCertHash + sizeof(parentCertHash));
 
     std::vector<uint8_t> issuedByte  = bigEndian8(issuedAt);
     std::vector<uint8_t> expiredByte = bigEndian8(expiredAt);
@@ -138,7 +141,7 @@ struct SignerMeta
     Crypto::randombytes(iv, sizeof(iv));
 
     Crypto::AES256::init(&context, currentKey);
-    Crypto::AES256::counter(&context, iv, result.data() + 32, result.data() + 32, result.size() - 32);
+    Crypto::AES256::counter(&context, iv, result.data() + 64, result.data() + 64, result.size() - 64);
 
     result.insert(result.end(), iv, iv + sizeof(iv));
     dump(iv, sizeof(iv), L"Mảng khởi tạo");
@@ -305,9 +308,10 @@ static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metad
   // Đọc các mã định dạng
   inp.seekg(metaStartOffset);
   inp.read(reinterpret_cast<char*>(metadata.parentKey), sizeof(metadata.parentKey));
+  inp.read(reinterpret_cast<char*>(metadata.parentCertHash), sizeof(metadata.parentCertHash));
 
   // Đọc phần dữ liệu bị mã hóa
-  uint64_t             encryptedSize = metadataSize - 32 - AES256_BLOCKLEN;
+  uint64_t             encryptedSize = metadataSize - 64 - AES256_BLOCKLEN;
   std::vector<uint8_t> encryptedPart(encryptedSize);
   inp.read(reinterpret_cast<char*>(encryptedPart.data()), encryptedSize);
 
@@ -410,17 +414,17 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
   Crypto::VNExos::sha256(metadata.currentKey, pk, DILITHIUM_PUBLICKEYBYTES);
   auto rawData = metadata.toBytes();
 
-  // Xuất ra tệp khóa công khai: [khóa thô][siêu dữ liệu]
+  // Xuất ra tệp chứng chỉ: [khóa thô][siêu dữ liệu]
   {
     File::Content pkFile(pk, pk + DILITHIUM_PUBLICKEYBYTES);
     pkFile.insert(pkFile.end(), rawData.begin(), rawData.end());
     if (!File::Write(pubKeyPath, pkFile))
       return false;
-    std::wcout << L"[+] Khóa công khai được lưu vào: " << pubKeyPath
+    std::wcout << L"[+] Chứng chỉ được lưu vào: " << pubKeyPath
                << L" (" << (DILITHIUM_PUBLICKEYBYTES + rawData.size()) << L" byte)"
                << std::endl;
     dump(pkFile.data(), pkFile.size());
-    dump(metadata.currentKey, sizeof(metadata.currentKey), L"Mã băm khóa công khai");
+    dump(metadata.currentKey, sizeof(metadata.currentKey), L"Mã băm chứng chỉ");
   }
 
   std::wcout << L"[+] Người ký    : " << metadata.organization
@@ -498,12 +502,20 @@ static bool signCertFile(
     return false;
   }
 
-  if (!File::Write(
-          outPath,
-          File::Content(
-              metadata.currentKey,
-              metadata.currentKey + sizeof(metadata.currentKey)),
-          inMetaOffset))
+  // Băm tệp chứng chỉ cha để lấy mã băm
+  std::vector<uint8_t> parentCertHashVec;
+  if (!File::Hash(pubKeyPath, parentCertHashVec))
+  {
+    std::wcout << L"[-] Không thể băm tệp chứng chỉ cha: " << pubKeyPath << std::endl;
+    return false;
+  }
+
+  // Khối định danh cha (64 byte) bao gồm: 32 byte Key ID + 32 byte Cert Hash
+  std::vector<uint8_t> parentKeysData;
+  parentKeysData.insert(parentKeysData.end(), metadata.currentKey, metadata.currentKey + 32);
+  parentKeysData.insert(parentKeysData.end(), parentCertHashVec.begin(), parentCertHashVec.begin() + 32);
+
+  if (!File::Write(outPath, parentKeysData, inMetaOffset))
   {
     std::wcout << L"[-] Không thể ghi khóa cha vào tệp: " << outPath << std::endl;
     return false;
@@ -579,8 +591,18 @@ static bool signDefaultFile(
     return false;
   }
 
-  // Khối siêu dữ liệu của tệp mặc định chỉ chứa ID khóa ký (32 byte)
-  std::vector<uint8_t> metaBytes(metadata.currentKey, metadata.currentKey + 32);
+  // Băm tệp chứng chỉ của người ký
+  std::vector<uint8_t> certHash;
+  if (!File::Hash(pubKeyPath, certHash))
+  {
+    std::wcout << L"[-] Không thể băm tệp chứng chỉ ký: " << pubKeyPath << std::endl;
+    return false;
+  }
+
+  // Khối siêu dữ liệu của tệp mặc định chứa ID khóa ký (32 byte) và Mã băm chứng chỉ (32 byte)
+  std::vector<uint8_t> metaBytes;
+  metaBytes.insert(metaBytes.end(), metadata.currentKey, metadata.currentKey + 32);
+  metaBytes.insert(metaBytes.end(), certHash.begin(), certHash.begin() + 32);
 
   if (!File::Append(outPath, metaBytes))
   {
@@ -647,7 +669,7 @@ bool Sign::signFile(
         secKeyPath, pubKeyPath,
         inPath, outPath, metadata);
   }
-  
+
   return signDefaultFile(
       secKeyPath, pubKeyPath,
       inPath, outPath, metadata);
@@ -716,23 +738,41 @@ bool Sign::readMetadata(const std::wstring& pubKeyPath)
 
 bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath)
 {
-  // Đọc tệp khóa công khai (dùng để xác minh)
+  // Đọc siêu dữ liệu của tệp khóa công khai (chứng chỉ) để kiểm tra tính hợp lệ
+  SignerMeta pubKeyMeta;
+  if (readCertMetadata(pubKeyPath, pubKeyMeta) == 0)
+  {
+    std::wcout << L"[-] Tệp chứng chỉ không hợp lệ!" << std::endl;
+    return false;
+  }
+
+  if (pubKeyMeta.IsExpired())
+  {
+    std::wcout << L"[-] Chứng chỉ dùng để xác thực đã HẾT HẠN!" << std::endl;
+    return false;
+  }
+
+  // Đọc tệp chứng chỉ (dùng để xác minh chữ ký)
   std::vector<uint8_t> pubKeyData;
   if (!File::Read(pubKeyPath, pubKeyData))
   {
-    std::wcout << L"[-] Không thể đọc tệp khóa công khai: " << pubKeyPath << std::endl;
+    std::wcout << L"[-] Không thể đọc tệp chứng chỉ: " << pubKeyPath << std::endl;
     return false;
   }
-  
+
   if (pubKeyData.size() < DILITHIUM_PUBLICKEYBYTES)
   {
-    std::wcout << L"[-] Tệp khóa công khai không hợp lệ!" << std::endl;
+    std::wcout << L"[-] Tệp chứng chỉ không hợp lệ!" << std::endl;
     return false;
   }
-  
+
   // Tính hash của public key để so sánh với signer ID nếu cần
   uint8_t pubKeyHash[32];
   Crypto::VNExos::sha256(pubKeyHash, pubKeyData.data(), DILITHIUM_PUBLICKEYBYTES);
+
+  // Băm toàn bộ tệp chứng chỉ (để đối chiếu Cert Hash chống hạ cấp)
+  std::vector<uint8_t> pubKeyFileHash;
+  File::Hash(pubKeyPath, pubKeyFileHash);
 
   // Mở tệp cần xác minh
 #if defined(_WIN32)
@@ -749,7 +789,7 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
   }
 
   std::streamsize fileSize = inp.tellg();
-  if (fileSize < DILITHIUM_BYTES + 32)
+  if (fileSize < DILITHIUM_BYTES + 64)
   {
     std::wcout << L"[-] Tệp quá nhỏ, không thể chứa chữ ký hợp lệ!" << std::endl;
     return false;
@@ -770,26 +810,54 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
   if (!isCert)
   {
     std::wcout << L"[*] Phân loại tệp: Tệp Dữ Liệu Thông Thường" << std::endl;
-    // Đọc 32 byte Key ID ngay trước chữ ký
+    // Đọc 64 byte (32 byte Key ID + 32 byte Cert Hash) ngay trước chữ ký
     std::vector<uint8_t> keyID(32);
-    inp.seekg(fileSize - DILITHIUM_BYTES - 32, std::ios::beg);
+    std::vector<uint8_t> certHash(32);
+    inp.seekg(fileSize - DILITHIUM_BYTES - 64, std::ios::beg);
     inp.read(reinterpret_cast<char*>(keyID.data()), 32);
+    inp.read(reinterpret_cast<char*>(certHash.data()), 32);
 
     // Kiểm tra Key ID có khớp với Public Key truyền vào không
     if (memcmp(keyID.data(), pubKeyHash, 32) != 0)
     {
-      std::wcout << L"[!] CẢNH BÁO: Tệp này được ký bởi một khóa khác! (Key ID không khớp)." << std::endl;
+      std::wcout << L"[!] CẢNH BÁO: Tệp này được ký bởi một chứng chỉ khác! (Key ID không khớp)." << std::endl;
       std::wcout << L"    Key ID trên tệp: ";
       dump(keyID.data(), 32);
-      std::wcout << L"    Key ID của khóa công khai cung cấp: ";
+      std::wcout << L"    Key ID của chứng chỉ cung cấp: ";
       dump(pubKeyHash, 32);
-      std::wcout << L"[-] Từ chối xác thực. Vui lòng cung cấp đúng tệp khóa công khai." << std::endl;
+      std::wcout << L"[-] Từ chối xác thực. Vui lòng cung cấp đúng tệp chứng chỉ." << std::endl;
       return false;
     }
-  }
-  else
+
+    // Kiểm tra Cert Hash chống hạ cấp
+    if (memcmp(certHash.data(), pubKeyFileHash.data(), 32) != 0)
+    {
+      std::wcout << L"[!] LỖI BẢO MẬT: Tệp chứng chỉ không khớp hoàn toàn với chứng chỉ dùng để ký!" << std::endl;
+      std::wcout << L"[-] Từ chối xác thực để ngăn chặn tấn công hạ cấp chứng chỉ." << std::endl;
+      return false;
+    }
+  } else
   {
     std::wcout << L"[*] Phân loại tệp: Chứng Chỉ (Certificate)" << std::endl;
+    SignerMeta inMeta;
+    if (readCertMetadata(inPath, inMeta) != 0)
+    {
+      bool isRoot = true;
+      for (int i = 0; i < 32; ++i)
+      {
+        if (inMeta.parentKey[i] != 0) isRoot = false;
+      }
+
+      if (!isRoot)
+      {
+        if (memcmp(inMeta.parentCertHash, pubKeyFileHash.data(), 32) != 0)
+        {
+          std::wcout << L"[!] LỖI BẢO MẬT: Tệp chứng chỉ cha không khớp hoàn toàn với chứng chỉ đã dùng để cấp phép!" << std::endl;
+          std::wcout << L"[-] Từ chối xác thực để ngăn chặn tấn công hạ cấp chứng chỉ." << std::endl;
+          return false;
+        }
+      }
+    }
   }
 
   // Băm nội dung tệp (trừ phần chữ ký ở cuối)
