@@ -55,7 +55,7 @@ inline void secureZeroize(void* p, size_t n)
 
 /**
  * Định dạng của khối siêu dữ liệu
- *   [32 byte: Mã băm của khóa hiện tại][32 byte: Mã băm của khóa cha]
+ *   [32 byte: Mã băm của khóa cha][32 byte: Mã khóa của khóa cha]
  * [
  *   [8  byte: Thời gian cấp (unix timestamp, big-endian)]
  *   [8  byte: Thời gian hết hạn (unix timestamp, big-endian)]
@@ -510,7 +510,7 @@ static bool signCertFile(
     return false;
   }
 
-  // Khối định danh cha (64 byte) bao gồm: 32 byte Key ID + 32 byte Cert Hash
+  // Khối định danh cha (64 byte) bao gồm: 32 byte Mã ID + 32 byte Mã băm chứng chỉ
   std::vector<uint8_t> parentKeysData;
   parentKeysData.insert(parentKeysData.end(), metadata.currentKey, metadata.currentKey + 32);
   parentKeysData.insert(parentKeysData.end(), parentCertHashVec.begin(), parentCertHashVec.begin() + 32);
@@ -569,6 +569,7 @@ static bool signCertFile(
  *     [32   byte: Mã băm của khóa dùng để ký (ID Khóa)]
  *     [4627 byte: Chữ ký Dilithium]
  */
+// TODO: Thiết kế tệp thực thi cho riêng hệ điều hành VNExos
 static bool signDefaultFile(
     const std::wstring& secKeyPath,
     const std::wstring& pubKeyPath,
@@ -766,11 +767,11 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
     return false;
   }
 
-  // Tính hash của public key để so sánh với signer ID nếu cần
+  // Tính mã băm của chứng chỉ để so sánh với mã ID người ký nếu cần
   uint8_t pubKeyHash[32];
   Crypto::VNExos::sha256(pubKeyHash, pubKeyData.data(), DILITHIUM_PUBLICKEYBYTES);
 
-  // Băm toàn bộ tệp chứng chỉ (để đối chiếu Cert Hash chống hạ cấp)
+  // Băm toàn bộ tệp chứng chỉ (để đối chiếu mã băm chứng chỉ chống hạ cấp)
   std::vector<uint8_t> pubKeyFileHash;
   File::Hash(pubKeyPath, pubKeyFileHash);
 
@@ -810,26 +811,26 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
   if (!isCert)
   {
     std::wcout << L"[*] Phân loại tệp: Tệp Dữ Liệu Thông Thường" << std::endl;
-    // Đọc 64 byte (32 byte Key ID + 32 byte Cert Hash) ngay trước chữ ký
+    // Đọc 64 byte (32 byte Mã ID + 32 byte Mã băm chứng chỉ) ngay trước chữ ký
     std::vector<uint8_t> keyID(32);
     std::vector<uint8_t> certHash(32);
     inp.seekg(fileSize - DILITHIUM_BYTES - 64, std::ios::beg);
     inp.read(reinterpret_cast<char*>(keyID.data()), 32);
     inp.read(reinterpret_cast<char*>(certHash.data()), 32);
 
-    // Kiểm tra Key ID có khớp với Public Key truyền vào không
+    // Kiểm tra Mã ID có khớp với Chứng Chỉ truyền vào không
     if (memcmp(keyID.data(), pubKeyHash, 32) != 0)
     {
-      std::wcout << L"[!] CẢNH BÁO: Tệp này được ký bởi một chứng chỉ khác! (Key ID không khớp)." << std::endl;
-      std::wcout << L"    Key ID trên tệp: ";
+      std::wcout << L"[!] CẢNH BÁO: Tệp này được ký bởi một chứng chỉ khác! (Mã ID không khớp)." << std::endl;
+      std::wcout << L"    Mã ID trên tệp: ";
       dump(keyID.data(), 32);
-      std::wcout << L"    Key ID của chứng chỉ cung cấp: ";
+      std::wcout << L"    Mã ID của chứng chỉ cung cấp: ";
       dump(pubKeyHash, 32);
       std::wcout << L"[-] Từ chối xác thực. Vui lòng cung cấp đúng tệp chứng chỉ." << std::endl;
       return false;
     }
 
-    // Kiểm tra Cert Hash chống hạ cấp
+    // Kiểm tra mã băm chứng chỉ chống hạ cấp
     if (memcmp(certHash.data(), pubKeyFileHash.data(), 32) != 0)
     {
       std::wcout << L"[!] LỖI BẢO MẬT: Tệp chứng chỉ không khớp hoàn toàn với chứng chỉ dùng để ký!" << std::endl;
