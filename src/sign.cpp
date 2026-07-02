@@ -45,6 +45,14 @@ static constexpr uint8_t rootKey[32] = {
 
 void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring());
 
+// Xóa sạch vùng nhớ nhạy cảm
+inline void secureZeroize(void* p, size_t n)
+{
+  volatile uint8_t* vp = (volatile uint8_t*)p;
+  while (n--)
+    *vp++ = 0;
+}
+
 /**
  * Định dạng của khối siêu dữ liệu
  *   [32 byte: Mã băm của khóa hiện tại][32 byte: Mã băm của khóa cha]
@@ -386,12 +394,17 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
   // Xuất ra tệp khóa riêng tư: [khóa thô][siêu dữ liệu]
   {
     File::Content skFile(sk, sk + DILITHIUM_SECRETKEYBYTES);
+    secureZeroize(sk, DILITHIUM_SECRETKEYBYTES);
     if (!File::Write(secKeyPath, skFile))
+    {
+      secureZeroize(skFile.data(), skFile.size());
       return false;
+    }
     std::wcout << L"[+] Khóa riêng tư  được lưu vào: " << secKeyPath
                << L" (" << DILITHIUM_SECRETKEYBYTES << L" byte)"
                << std::endl;
     dump(skFile.data(), skFile.size());
+    secureZeroize(skFile.data(), skFile.size());
   }
 
   Crypto::VNExos::sha256(metadata.currentKey, pk, DILITHIUM_PUBLICKEYBYTES);
@@ -519,6 +532,8 @@ static bool signCertFile(
       signature.data(), &signatureLength,
       certHash.data(), certHash.size(),
       secretKey.data());
+
+  secureZeroize(secretKey.data(), secretKey.size());
 
   if (!File::Append(outPath, signature))
   {

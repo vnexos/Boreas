@@ -48,14 +48,22 @@ bool Encrypt::generateKey(const std::wstring& secKeyPath, const std::wstring& pu
   Kyber::generateKeyPair(pk, sk);
 
   if (!File::Write(pubKeyPath, File::Content(pk, pk + KYBER_INDCCA_PUBKEYBYTES)))
+  {
+    secureZeroize(sk, KYBER_INDCCA_SECKEYBYTES);
     return false;
+  }
   if (!File::Write(secKeyPath, File::Content(sk, sk + KYBER_INDCCA_SECKEYBYTES)))
+  {
+    secureZeroize(sk, KYBER_INDCCA_SECKEYBYTES);
     return false;
+  }
 
   std::wcout << L"[+] Khóa bí mật được lưu ở: " << secKeyPath << " (" << KYBER_INDCCA_SECKEYBYTES << " byte)\n";
   dump(sk, KYBER_INDCCA_SECKEYBYTES);
   std::wcout << L"[+] Khóa công khai được lưu ở: " << pubKeyPath << " (" << KYBER_INDCCA_PUBKEYBYTES << " byte)\n";
   dump(pk, KYBER_INDCCA_PUBKEYBYTES);
+
+  secureZeroize(sk, KYBER_INDCCA_SECKEYBYTES);
 
   return true;
 }
@@ -138,18 +146,23 @@ bool Encrypt::decryptFile(const std::wstring& secKeyPath, const std::wstring& in
   if (secretKey.size() != KYBER_INDCCA_SECKEYBYTES)
   {
     wprintf(L"[-] Khóa bí mật không hợp lệ! (mong đợi %d byte nhưng có %zu byte)\n", KYBER_INDCCA_SECKEYBYTES, secretKey.size());
+    secureZeroize(secretKey.data(), secretKey.size());
     return false;
   }
 
   // Đọc tệp chứa dữ liệu đã mã hóa
   File::Content encryptedData;
   if (!File::Read(inPath, encryptedData))
+  {
+    secureZeroize(secretKey.data(), secretKey.size());
     return false;
+  }
 
   size_t headerSize = KYBER_INDCCA_CIPHERTEXTBYTES + AES256_BLOCKLEN;
   if (encryptedData.size() < headerSize)
   {
     wprintf(L"[-] Tệp mã hóa quá nhỏ! (tối thiểu %zu byte nhưng có %zu byte)\n", headerSize, encryptedData.size());
+    secureZeroize(secretKey.data(), secretKey.size());
     return false;
   }
 
@@ -164,6 +177,9 @@ bool Encrypt::decryptFile(const std::wstring& secKeyPath, const std::wstring& in
   // Mở gói khóa Kyber
   uint8_t ss[KYBER_SSBYTES];
   Kyber::decapsulate(ss, ct, secretKey.data());
+
+  // Xóa sạch khóa bí mật sau khi decapsulate xong
+  secureZeroize(secretKey.data(), secretKey.size());
 
   // Giải mã AES-256-CTR
   Crypto::AES256::AES256Context context;
