@@ -552,21 +552,80 @@ static bool signCertFile(
  *     [2592 byte: Mảng khóa công khai]
  *     [x    byte: Khối siêu dữ liệu đã được chỉnh sửa]
  *     [4627 byte: Chữ ký]
- * - Đối với tệp mặc định (thêm siêu dữ liệu vào cuối tệp):
- *     [32   byte: Mã băm của khóa ký]
- *   [
- *     [8    byte: Thời gian cấp (unix timestamp, big-endian)]
- *     [8    byte: Thời gian hết hạn (unix timestamp, big-endian)]
- *     [2    byte: Độ dài tên tổ chức (big-endian)][tên tổ chức]
- *     [2    byte: Độ dài địa chỉ Email (big-endian)][địa chỉ email]
- *     [2    byte: Độ dài tên quốc gia (big-endian)][tên quốc gia]
- *     [2    byte: Độ dài mô tả (big-endian)][mô tả]
- *   ] Vùng bị mã hóa
- *     [16   byte: Mảng khởi tạo của AES]
- *     [8    byte: Độ dài khối siêu dữ liệu (big-endian)]
- *     [8    byte: mã nhận diện 'V', 'N', 'E', 'P', 'Q', 'S', 0, x]
- *     [4627 byte: Chữ ký]
+ * - Đối với tệp mặc định (ký dữ liệu thông thường):
+ *     [Nội dung tệp gốc]
+ *     [32   byte: Mã băm của khóa dùng để ký (ID Khóa)]
+ *     [4627 byte: Chữ ký Dilithium]
  */
+static bool signDefaultFile(
+    const std::wstring& secKeyPath,
+    const std::wstring& pubKeyPath,
+    const std::wstring& inPath,
+    const std::wstring& outPath,
+    const SignerMeta&   metadata)
+{
+  (void)pubKeyPath;
+
+  if (metadata.IsExpired())
+  {
+    std::wcout << L"[-] Khóa ký đã hết hạn!" << std::endl;
+    return false;
+  }
+
+  // Sao chép nội dung tệp gốc
+  if (!File::Copy(inPath, outPath))
+  {
+    std::wcout << L"[-] Không thể sao chép tệp: " << inPath << " -> " << outPath << std::endl;
+    return false;
+  }
+
+  // Khối siêu dữ liệu của tệp mặc định chỉ chứa ID khóa ký (32 byte)
+  std::vector<uint8_t> metaBytes(metadata.currentKey, metadata.currentKey + 32);
+
+  if (!File::Append(outPath, metaBytes))
+  {
+    std::wcout << L"[-] Không thể ghi siêu dữ liệu vào tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  // Băm toàn bộ nội dung tệp (bao gồm cả khối ID khóa ký vừa thêm)
+  std::vector<uint8_t> fileHash;
+  if (!File::Hash(outPath, fileHash))
+  {
+    std::wcout << L"[-] Không thể băm tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  // Đọc khóa bí mật
+  std::vector<uint8_t> secretKey;
+  if (!File::Read(secKeyPath, secretKey))
+  {
+    std::wcout << L"[-] Không thể đọc tệp: " << secKeyPath << std::endl;
+    return false;
+  }
+
+  // Ký tệp
+  std::vector<uint8_t> signature(DILITHIUM_BYTES);
+  size_t               signatureLength;
+  Dilithium::sign(
+      signature.data(), &signatureLength,
+      fileHash.data(), fileHash.size(),
+      secretKey.data());
+
+  secureZeroize(secretKey.data(), secretKey.size());
+
+  // Nối chữ ký vào cuối tệp
+  if (!File::Append(outPath, signature))
+  {
+    std::wcout << L"[-] Không thể thêm chữ ký vào tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  std::wcout << L"[+] Ký thành công tệp dữ liệu: " << outPath << std::endl;
+
+  return true;
+}
+
 bool Sign::signFile(
     const std::wstring& secKeyPath,
     const std::wstring& pubKeyPath,
@@ -588,7 +647,10 @@ bool Sign::signFile(
         secKeyPath, pubKeyPath,
         inPath, outPath, metadata);
   }
-  return true;
+  
+  return signDefaultFile(
+      secKeyPath, pubKeyPath,
+      inPath, outPath, metadata);
 }
 
 bool Sign::readMetadata(const std::wstring& pubKeyPath)
