@@ -32,7 +32,7 @@ static const int16_t zetas[128] = {
 
 void initZetas()
 {
-  // Do nothing, zetas is now a constant array
+  // Không làm gì cả, zetas hiện đã là một mảng hằng số
 }
 
 void applyNTT(int16_t r[256])

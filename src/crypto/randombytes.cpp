@@ -24,7 +24,7 @@ void randombytes_stir(const uint8_t* seed, uint64_t len)
     Keccak::squeeze(old_entropy, 32, &prng_state);
 
     // Khởi tạo lại trạng thái mới
-    Keccak::init(&prng_state, 136); // Rate 136 = SHAKE256
+    Keccak::init(&prng_state, 136); // Tốc độ hấp thụ 136 = SHAKE256
 
     // Hấp thụ Ngẫu Tố (entropy) cũ
     Keccak::absorb(&prng_state, old_entropy, 32);
@@ -36,17 +36,17 @@ void randombytes_stir(const uint8_t* seed, uint64_t len)
     }
 
     // Đóng băng quá trình absorb và đưa vào trạng thái squeeze
-    Keccak::finalize(&prng_state, 0x1F); // SHAKE domain separator
+    Keccak::finalize(&prng_state, 0x1F); // Bộ phân tách miền SHAKE
   } else
   {
-    Keccak::init(&prng_state, 136); // Rate 136 = SHAKE256
+    Keccak::init(&prng_state, 136); // Tốc độ hấp thụ 136 = SHAKE256
 
     if (seed != nullptr && len > 0)
     {
       Keccak::absorb(&prng_state, seed, len);
     }
 
-    Keccak::finalize(&prng_state, 0x1F); // SHAKE domain separator
+    Keccak::finalize(&prng_state, 0x1F); // Bộ phân tách miền SHAKE
     prng_initialized = true;
   }
 }

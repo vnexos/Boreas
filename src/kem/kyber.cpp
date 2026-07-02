@@ -71,7 +71,7 @@ void decapsulate(uint8_t sharedSecret[KYBER_SSBYTES], const uint8_t ciphertext[K
     fail |= ciphertext[i] ^ cmp[i];
   }
 
-  fail = (fail == 0) ? 0 : 1;
+  fail = (uint32_t)(-fail) >> 31;
 
   // Chọn hằng số thời gian (Constant-time selection): Nếu fail == 0, khóa chia sẻ dùng kr. Ngược lại dùng z.
   // Giá trị z nằm tại vị trí secretKey + KYBER_INDCPA_SECKEYBYTES + KYBER_INDCPA_PUBKEYBYTES + KYBER_SYMBYTES

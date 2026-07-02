@@ -245,7 +245,7 @@ void polyUniformGamma1(Polynomial* a, const uint8_t seed[DILITHIUM_CRHBYTES], ui
 {
   unsigned int          ctr    = 0;
   unsigned int          buflen = DILITHIUM_STREAM256_BLOCKBYTES;
-  uint8_t               buf[DILITHIUM_STREAM256_BLOCKBYTES + 4]; // max leftover = 4 bytes
+  uint8_t               buf[DILITHIUM_STREAM256_BLOCKBYTES + 4]; // Phần thừa tối đa = 4 byte
   Crypto::Keccak::State state;
 
   stream256Init(&state, seed, nonce);
@@ -372,7 +372,7 @@ void polyVectorLUniformGamma1(PolynomialVectorL* v, const uint8_t seed[DILITHIUM
 {
   for (int i = 0; i < DILITHIUM_L; ++i)
   {
-    polyUniformGamma1(&v->vec[i], seed, nonce + i * DILITHIUM_L); // Wait, reference usually does nonce++. Let's just do nonce++.
+    polyUniformGamma1(&v->vec[i], seed, nonce + i * DILITHIUM_L); // Lưu ý: bản tham chiếu thường dùng nonce++. Ở đây ta cũng tăng nonce++.
   }
 }
 
