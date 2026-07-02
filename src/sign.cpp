@@ -713,3 +713,120 @@ bool Sign::readMetadata(const std::wstring& pubKeyPath)
 
   return true;
 }
+
+bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath)
+{
+  // Đọc tệp khóa công khai (dùng để xác minh)
+  std::vector<uint8_t> pubKeyData;
+  if (!File::Read(pubKeyPath, pubKeyData))
+  {
+    std::wcout << L"[-] Không thể đọc tệp khóa công khai: " << pubKeyPath << std::endl;
+    return false;
+  }
+  
+  if (pubKeyData.size() < DILITHIUM_PUBLICKEYBYTES)
+  {
+    std::wcout << L"[-] Tệp khóa công khai không hợp lệ!" << std::endl;
+    return false;
+  }
+  
+  // Tính hash của public key để so sánh với signer ID nếu cần
+  uint8_t pubKeyHash[32];
+  Crypto::VNExos::sha256(pubKeyHash, pubKeyData.data(), DILITHIUM_PUBLICKEYBYTES);
+
+  // Mở tệp cần xác minh
+#if defined(_WIN32)
+  std::ifstream inp(inPath, std::ios::in | std::ios::binary | std::ios::ate);
+#else
+  std::string   utf8FileName(inPath.begin(), inPath.end());
+  std::ifstream inp(utf8FileName, std::ios::in | std::ios::binary | std::ios::ate);
+#endif
+
+  if (!inp)
+  {
+    std::wcout << L"[-] Không thể mở tệp cần xác minh: " << inPath << std::endl;
+    return false;
+  }
+
+  std::streamsize fileSize = inp.tellg();
+  if (fileSize < DILITHIUM_BYTES + 32)
+  {
+    std::wcout << L"[-] Tệp quá nhỏ, không thể chứa chữ ký hợp lệ!" << std::endl;
+    return false;
+  }
+
+  // Đọc mã nhận diện (Magic Bytes) để phân biệt loại tệp
+  uint64_t magic = 0;
+  inp.seekg(fileSize - DILITHIUM_BYTES - 8, std::ios::beg);
+  inp.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+
+  bool isCert = ((magic & ~(uint64_t)0xff) == 0x564e455051000000);
+
+  // Đọc chữ ký ở cuối tệp
+  std::vector<uint8_t> signature(DILITHIUM_BYTES);
+  inp.seekg(fileSize - DILITHIUM_BYTES, std::ios::beg);
+  inp.read(reinterpret_cast<char*>(signature.data()), DILITHIUM_BYTES);
+
+  if (!isCert)
+  {
+    std::wcout << L"[*] Phân loại tệp: Tệp Dữ Liệu Thông Thường" << std::endl;
+    // Đọc 32 byte Key ID ngay trước chữ ký
+    std::vector<uint8_t> keyID(32);
+    inp.seekg(fileSize - DILITHIUM_BYTES - 32, std::ios::beg);
+    inp.read(reinterpret_cast<char*>(keyID.data()), 32);
+
+    // Kiểm tra Key ID có khớp với Public Key truyền vào không
+    if (memcmp(keyID.data(), pubKeyHash, 32) != 0)
+    {
+      std::wcout << L"[!] CẢNH BÁO: Tệp này được ký bởi một khóa khác! (Key ID không khớp)." << std::endl;
+      std::wcout << L"    Key ID trên tệp: ";
+      dump(keyID.data(), 32);
+      std::wcout << L"    Key ID của khóa công khai cung cấp: ";
+      dump(pubKeyHash, 32);
+      std::wcout << L"[-] Từ chối xác thực. Vui lòng cung cấp đúng tệp khóa công khai." << std::endl;
+      return false;
+    }
+  }
+  else
+  {
+    std::wcout << L"[*] Phân loại tệp: Chứng Chỉ (Certificate)" << std::endl;
+  }
+
+  // Băm nội dung tệp (trừ phần chữ ký ở cuối)
+  uint64_t signedDataSize = fileSize - DILITHIUM_BYTES;
+  inp.seekg(0, std::ios::beg);
+
+  Crypto::Keccak::State state;
+  Crypto::Keccak::init(&state, 72);
+
+  const size_t         BUFFER_SIZE = 64 * 1024;
+  std::vector<uint8_t> buffer(BUFFER_SIZE);
+
+  uint64_t remaining = signedDataSize;
+  while (remaining > 0)
+  {
+    std::streamsize toRead = (remaining > static_cast<uint64_t>(BUFFER_SIZE)) ? BUFFER_SIZE : remaining;
+    inp.read(reinterpret_cast<char*>(buffer.data()), toRead);
+    std::streamsize bytesRead = inp.gcount();
+    if (bytesRead == 0) break;
+
+    Crypto::Keccak::absorb(&state, buffer.data(), bytesRead);
+    remaining -= bytesRead;
+  }
+
+  std::vector<uint8_t> fileHash(128);
+  Crypto::Keccak::finalize(&state, 0x25);
+  Crypto::Keccak::squeeze(fileHash.data(), fileHash.size(), &state);
+
+  inp.close();
+
+  // Thực hiện xác thực bằng Dilithium
+  if (!Dilithium::verify(signature.data(), signature.size(), fileHash.data(), fileHash.size(), pubKeyData.data()))
+  {
+    std::wcout << L"[-] XÁC THỰC THẤT BẠI: Chữ ký không hợp lệ hoặc dữ liệu đã bị sửa đổi!" << std::endl;
+    return false;
+  }
+
+  std::wcout << L"[+] XÁC THỰC THÀNH CÔNG: Chữ ký hoàn toàn hợp lệ." << std::endl;
+  return true;
+}

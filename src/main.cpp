@@ -168,6 +168,9 @@ int main(int argc, char* argv[])
       } else if (cleanArgv[2].compare(L"-s") == 0 && cleanArgv.size() == 7)
       {
         return !Sign::signFile(cleanArgv[3], cleanArgv[4], cleanArgv[5], cleanArgv[6]);
+      } else if (cleanArgv[2].compare(L"-x") == 0 && cleanArgv.size() == 5)
+      {
+        return !Sign::verifyFile(cleanArgv[3], cleanArgv[4]);
       } else if (cleanArgv[2].compare(L"-r") == 0 && cleanArgv.size() == 4)
       {
         return !Sign::readMetadata(cleanArgv[3]);
