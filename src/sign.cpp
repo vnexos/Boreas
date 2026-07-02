@@ -38,10 +38,10 @@ extern std::wstring signType;
 extern uint8_t      dilithiumKeyType;
 
 static constexpr uint8_t rootKey[32] = {
-    0xa3, 0xa0, 0xfb, 0x7d, 0x50, 0x26, 0xc7, 0xb2,
-    0x05, 0x2e, 0xc3, 0x31, 0xa5, 0xcc, 0xdc, 0x5b,
-    0x15, 0x74, 0x3c, 0x14, 0x2e, 0xfc, 0x03, 0xc2,
-    0x59, 0x74, 0x3e, 0xb5, 0x5d, 0x88, 0x89, 0x16};
+    0xe8, 0x5e, 0x32, 0xb3, 0x96, 0x00, 0x59, 0x74,
+    0xc1, 0xb1, 0x99, 0xf3, 0xdb, 0xb9, 0xe0, 0x6f,
+    0x64, 0xc6, 0x60, 0x9e, 0x49, 0x99, 0x9f, 0xaa,
+    0x78, 0x95, 0xac, 0x56, 0xf2, 0xec, 0x29, 0x54};
 
 void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring());
 
@@ -383,23 +383,19 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
   // Tạo cặp khóa
   Dilithium::generateKeyPair(pk, sk);
 
-  Crypto::VNExos::sha256(metadata.currentKey, sk, DILITHIUM_SECRETKEYBYTES);
-  auto rawData = metadata.toBytes();
-
   // Xuất ra tệp khóa riêng tư: [khóa thô][siêu dữ liệu]
   {
     File::Content skFile(sk, sk + DILITHIUM_SECRETKEYBYTES);
-    skFile.insert(skFile.end(), rawData.begin(), rawData.end());
     if (!File::Write(secKeyPath, skFile))
       return false;
     std::wcout << L"[+] Khóa riêng tư  được lưu vào: " << secKeyPath
-               << L" (" << (DILITHIUM_SECRETKEYBYTES + rawData.size()) << L" byte)"
+               << L" (" << DILITHIUM_SECRETKEYBYTES << L" byte)"
                << std::endl;
     dump(skFile.data(), skFile.size());
   }
 
   Crypto::VNExos::sha256(metadata.currentKey, pk, DILITHIUM_PUBLICKEYBYTES);
-  rawData = metadata.toBytes();
+  auto rawData = metadata.toBytes();
 
   // Xuất ra tệp khóa công khai: [khóa thô][siêu dữ liệu]
   {
