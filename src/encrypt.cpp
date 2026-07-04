@@ -8,12 +8,16 @@
  * @brief Triển khai thuật toán mã hóa/giải mã cấp cao.
  */
 #include "encrypt.hpp"
+#include "converter.hpp"
 #include "crypto/aes256.hpp"
 #include "crypto/randombytes.hpp"
 #include "file.hpp"
 #include "kem/kyber.hpp"
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <string>
+#include <vector>
 
 extern bool bDumpFlag;
 void        print_hex(const uint8_t* data, uint64_t len);
@@ -198,6 +202,122 @@ bool Encrypt::decryptFile(const std::wstring& secKeyPath, const std::wstring& in
     return false;
 
   std::wcout << L"[+] Đã lưu dữ liệu giải mã vào: " << outPath << " (" << data.size() << " byte)\n";
+
+  return true;
+}
+
+static std::vector<uint8_t> getKey(const std::wstring& key)
+{
+  std::string          charKey = Converter::WStringToUtf8(key);
+  std::vector<uint8_t> result;
+
+  if (charKey.length() & 1)
+    return result;
+
+  size_t length = charKey.length();
+  result.reserve(length / 2);
+  uint8_t elem = 0;
+  for (uint64_t i = 0; i < length; i++)
+  {
+    elem   <<= 4;
+    char c   = charKey[i];
+    if (c >= '0' && c <= '9')
+      elem |= c - '0';
+    else if (c >= 'a' && c <= 'f')
+      elem |= c - 87;
+    else if (c >= 'A' && c <= 'F')
+      elem |= c - 55;
+    else
+      return {};
+
+    if (i & 1)
+    {
+      result.push_back(elem);
+      elem = 0;
+    }
+  }
+
+  return result;
+}
+
+bool Encrypt::aesEncrypt(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key)
+{
+  std::vector<uint8_t> byteKey     = getKey(key);
+  std::vector<uint8_t> magicNumber = {0, 0, 0, 'S', 'E', 'A', 'N', 'V'};
+
+  if (byteKey.size() != 32)
+  {
+    std::wcout << L"[-] Mã khóa không hợp lệ: " << byteKey.size() << " byte (mong đợi: 32 byte)" << std::endl;
+    return false;
+  }
+
+  std::vector<uint8_t> result;
+  if (!File::Read(inPath, result))
+  {
+    std::wcout << L"[-] Không thể đọc tệp: " << inPath << std::endl;
+    return false;
+  }
+
+  uint64_t i;
+  for (i = 0; i < 8; ++i)
+  {
+    if (result[result.size() - 8 + i] != magicNumber[i])
+      break;
+  }
+
+  if (i != 8)
+  {
+    Crypto::AES256::AES256Context context;
+    Crypto::AES256::init(&context, byteKey.data());
+
+    uint8_t iv[AES256_BLOCKLEN];
+
+    Crypto::randombytes(iv, sizeof(iv));
+
+    Crypto::AES256::counter(&context, iv, result.data(), result.data(), result.size());
+
+    result.insert(result.end(), iv, iv + sizeof(iv));
+    result.insert(result.end(), magicNumber.begin(), magicNumber.end());
+
+    secureZeroize(&context, sizeof(context));
+    secureZeroize(byteKey.data(), byteKey.size());
+
+    if (!File::Write(outPath, result))
+    {
+      std::wcout << L"[-] Không thể ghi tệp: " << outPath << std::endl;
+      return false;
+    }
+
+    std::wcout << L"[+] Mã hóa thành công vào tệp: " << outPath << std::endl;
+  } else
+  {
+    Crypto::AES256::AES256Context context;
+    Crypto::AES256::init(&context, byteKey.data());
+
+    uint8_t iv[AES256_BLOCKLEN];
+
+    for (uint64_t i = 0; i < AES256_BLOCKLEN; ++i)
+    {
+      iv[i] = result[result.size() - 24 + i];
+    }
+
+    result.resize(result.size() - 24);
+    Crypto::AES256::counter(&context, iv, result.data(), result.data(), result.size());
+
+    secureZeroize(&context, sizeof(context));
+    secureZeroize(byteKey.data(), byteKey.size());
+    secureZeroize(iv, sizeof(iv));
+
+    if (!File::Write(outPath, result))
+    {
+      std::wcout << L"[-] Không thể ghi tệp: " << outPath << std::endl;
+      return false;
+    }
+
+    secureZeroize(result.data(), result.size());
+
+    std::wcout << L"[+] Giải mã thành công vào tệp: " << outPath << std::endl;
+  }
 
   return true;
 }

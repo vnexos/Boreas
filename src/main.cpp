@@ -55,7 +55,7 @@ void printUsage(const char* prog)
   wprintf(L"  ║ ML-KEM-1024 (Kyber) + ML-DSA-87 (Dilithium) ║\n");
   wprintf(L"  ╚═════════════════════════════════════════════╝\n");
   wprintf(L"Sử dụng:\n");
-  wprintf(L"[*] Mã hóa tệp: %s -encrypt\n", prog);
+  wprintf(L"[*] Mã hóa bất đối xứng: %s -encrypt\n", prog);
   wprintf(L"    -g <tệp khóa bí mật> <tệp khóa công khai>   : Sinh ra cặp khóa Kyber.\n");
   wprintf(L"    -e <tệp khóa công khai> <tệp vào> <tệp ra>  : Mã hóa tệp bằng khóa công khai\n");
   wprintf(L"                                                  Kyber kết hợp AES-256.\n");
@@ -69,7 +69,7 @@ void printUsage(const char* prog)
   wprintf(L"    -x <tệp chứng chỉ> <tệp vào>                : Xác minh tệp đã ký bằng thuật\n");
   wprintf(L"                                                  toán Dilithium.\n");
   wprintf(L"    -r <tệp chứng chỉ>                          : Đọc thông tin trong chứng chỉ.\n");
-  wprintf(L"[*] Cờ bổ sung: \n");
+  wprintf(L"[+] Cờ bổ sung: \n");
   wprintf(L"    --verbose   [-v]                            : Xả ra mã Thập lục phân để dễ\n");
   wprintf(L"                                                  so sánh.\n");
   wprintf(L"    --type      [-t] <loại tệp>                 : Xác định loại tệp cần ký.\n");
@@ -94,6 +94,8 @@ void printUsage(const char* prog)
   wprintf(L"                                                  và sẽ không được tin cậy. CHỈ\n");
   wprintf(L"                                                  NÊN SINH KHÓA NÀY VỚI MỤC ĐÍCH\n");
   wprintf(L"                                                  NGHIÊN CỨU.\n");
+  wprintf(L"[*] Mã hóa đối xứng: %s -aes256 <tệp vào> <tệp ra> <32 byte SHA3>\n", prog);
+  wprintf(L"[*] Băm tệp: %s -shav <256|512|1024> -i <tên tệp|chuỗi byte>\n", prog);
 }
 
 bool         bDumpFlag = false;
@@ -177,6 +179,17 @@ int main(int argc, char* argv[])
       } else
       {
         wprintf(L"[-] Lệnh sử dụng -sign không hợp lệ!\n");
+        printUsage(argv[0]);
+        return 1;
+      }
+    } else if (cleanArgv[1].compare(L"-aes256") == 0)
+    {
+      if (cleanArgv.size() == 5)
+      {
+        return !Encrypt::aesEncrypt(cleanArgv[2], cleanArgv[3], cleanArgv[4]);
+      } else
+      {
+        wprintf(L"[-] Lệnh sử dụng -aes256 không hợp lệ!\n");
         printUsage(argv[0]);
         return 1;
       }
