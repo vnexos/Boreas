@@ -90,8 +90,29 @@ bool File::Read(const std::wstring& filePath, File::Content& fileContent)
   return true;
 }
 
-bool File::Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash)
+bool File::Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, int type)
 {
+  size_t rate;
+  size_t outputLen;
+
+  switch (type)
+  {
+  case 256:
+    rate      = 136; // 1088-bit rate -> capacity 512-bit
+    outputLen = 32;  // 256-bit output
+    break;
+  case 512:
+    rate      = 72; // 576-bit rate -> capacity 1024-bit
+    outputLen = 64; // 512-bit output
+    break;
+  case 1024:
+    rate      = 72;  // giữ theo logic gốc của bạn
+    outputLen = 128; // 1024-bit output (dùng như XOF)
+    break;
+  default:
+    return false; // type không được hỗ trợ
+  }
+
   // Mở tệp ở chế độ đọc nhị phân
 #if defined(_WIN32)
   std::ifstream inp(filePath, std::ios::in | std::ios::binary | std::ios::ate);
@@ -103,26 +124,21 @@ bool File::Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash)
   if (!inp)
     return false;
 
-  outputHash.resize(128);
+  outputHash.resize(outputLen);
 
-  // Khởi tạo trạng thái Keccak
+  // Khởi tạo trạng thái Keccak với rate tương ứng
   Crypto::Keccak::State state;
-  init(&state, 72);
+  init(&state, rate);
 
-  // Khởi tạo bộ đệm nhỏ
   const size_t         BUFFER_SIZE = 64 * 1024;
   std::vector<uint8_t> buffer(BUFFER_SIZE);
 
-  // Vòng lặp hấp thụ tệp
   while (inp.read(reinterpret_cast<char*>(buffer.data()), buffer.size()) || inp.gcount() > 0)
   {
     uint64_t bytesRead = inp.gcount();
-
-    // Hấp thụ khúc dữ liệu vừa đọc vào trạng thái
     Crypto::Keccak::absorb(&state, buffer.data(), bytesRead);
   }
 
-  // Hoàn tất quá trình đệm dữ liệu
   Crypto::Keccak::finalize(&state, 0x25);
   Crypto::Keccak::squeeze(outputHash.data(), outputHash.size(), &state);
 
@@ -144,4 +160,12 @@ bool File::Copy(const std::wstring& inPath, const std::wstring& outPath)
   {
     return false;
   }
+}
+
+bool File::Exist(const std::wstring& path)
+{
+  std::error_code ec;
+
+  bool result = std::filesystem::is_regular_file(path, ec);
+  return !ec && result;
 }

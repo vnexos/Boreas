@@ -45,12 +45,13 @@ bool Append(const std::wstring& filePath, const Content& fileContent);
 bool Read(const std::wstring& filePath, Content& fileContent);
 
 /**
- * Băm một tệp bằng thuật toán SHAV-1024.
+ * Băm một tệp bằng thuật toán SHAV.
  * @param filePath    Đường dẫn của tệp
  * @param fileContent Nội dung của tệp đã được đọc
+ * @param type        Phân loại thực toán SHAV
  * @return false nếu có lỗi xãy ra trong quá trình đọc tệp
  */
-bool Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash);
+bool Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, int type = 1024);
 
 /**
  * Sao chép tệp
@@ -59,6 +60,12 @@ bool Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash);
  * @return false nếu có lỗi xãy ra trong quá trình sao chép tệp
  */
 bool Copy(const std::wstring& inPath, const std::wstring& outPath);
+/**
+ * Kiểm tra tệp tồn tại
+ * @param path Tệp cần kiểm tra
+ * @return true nếu tệp tồn tại, false thì ngược lại
+ */
+bool Exist(const std::wstring& path);
 } // namespace File
 
 #endif // __FILE_HPP

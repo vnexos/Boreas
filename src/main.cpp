@@ -9,7 +9,9 @@
  */
 #include "converter.hpp"
 #include "crypto/randombytes.hpp"
+#include "crypto/sha3.hpp"
 #include "encrypt.hpp"
+#include "file.hpp"
 #include "sign.hpp"
 
 #include <clocale>
@@ -18,6 +20,7 @@
 #include <random>
 #include <string.h>
 #include <string>
+#include <sys/types.h>
 #include <vector>
 
 using namespace Crypto;
@@ -95,12 +98,40 @@ void printUsage(const char* prog)
   wprintf(L"                                                  NÊN SINH KHÓA NÀY VỚI MỤC ĐÍCH\n");
   wprintf(L"                                                  NGHIÊN CỨU.\n");
   wprintf(L"[*] Mã hóa đối xứng: %s -aes256 <tệp vào> <tệp ra> <32 byte SHA3>\n", prog);
-  wprintf(L"[*] Băm tệp: %s -shav <256|512|1024> -i <tên tệp|chuỗi byte>\n", prog);
+  wprintf(L"[*] Băm tệp: %s -shav <256|512|1024> <tên tệp|chuỗi byte>\n", prog);
 }
 
 bool         bDumpFlag = false;
 std::wstring signType;
 uint8_t      dilithiumKeyType = 0;
+
+bool SHAV(const std::wstring& input, const std::wstring& shavType)
+{
+  int                  type = std::atoi(Converter::WStringToUtf8(shavType).c_str());
+  std::vector<uint8_t> res;
+  if (File::Exist(input))
+  {
+    if (!File::Hash(input, res, type))
+      return false;
+  } else
+  {
+    std::string strForHashing = Converter::WStringToUtf8(input);
+    res.resize(type / 8);
+
+    if (type == 256)
+      Crypto::VNExos::sha256(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
+    else if (type == 512)
+      Crypto::VNExos::sha512(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
+    else if (type == 1024)
+      Crypto::VNExos::sha1024(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
+  }
+
+  for (uint64_t i = 0; i < res.size(); ++i)
+    std::wcout << std::hex << std::setfill(L'0') << std::setw(2) << static_cast<int>(res[i]);
+  std::wcout << std::dec << std::endl;
+
+  return true;
+}
 
 int main(int argc, char* argv[])
 {
@@ -190,6 +221,17 @@ int main(int argc, char* argv[])
       } else
       {
         wprintf(L"[-] Lệnh sử dụng -aes256 không hợp lệ!\n");
+        printUsage(argv[0]);
+        return 1;
+      }
+    } else if (cleanArgv[1].compare(L"-shav") == 0)
+    {
+      if (cleanArgv.size() == 4)
+      {
+        return !SHAV(cleanArgv[3], cleanArgv[2]);
+      }
+      {
+        wprintf(L"[-] Lệnh sử dụng -shav không hợp lệ!\n");
         printUsage(argv[0]);
         return 1;
       }
