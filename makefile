@@ -6,7 +6,7 @@
 # =========================================================
 
 # Tệp nhị phân đầu ra
-TARGET = boreas.elf
+TARGET = boreas
 
 # Trình biên dịch
 CC = gcc
@@ -27,19 +27,23 @@ all: $(TARGET)
 
 # Link
 $(TARGET): $(OBJS)
-	@echo "--> Linking $(TARGET)..."
+	@echo "--> Đang liên kết $(TARGET)..."
 	$(CXX) $(OBJS) -o $(TARGET)
-	@echo "--> Build successful: $(TARGET)"
+	@echo "--> Xây thành công: $(TARGET)"
 
 # Compile .cpp files (no PQC_DEFS needed, they use clean wrapper headers)
 %.o: %.cpp
-	@echo "--> Compiling C++: $<"
+	@echo "--> Đang biên dịch C++: $<"
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Clean
 clean:
-	@echo "--> Cleaning..."
+	@echo "--> Đang dọn dẹp..."
 	rm -f $(OBJS) $(TARGET)
 	@echo "--> Clean complete."
 
-.PHONY: all clean
+install: all
+	@echo "--> Đang cài đặt..."
+	mv $(TARGET) /usr/bin/$(TARGET)
+
+.PHONY: all clean install
