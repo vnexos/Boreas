@@ -197,6 +197,14 @@ int main(int argc, char* argv[])
     {
       if (cleanArgv[2].compare(L"-g") == 0 && cleanArgv.size() == 5)
       {
+        std::wcout << L"[+] Loại khóa: ";
+        if (dilithiumKeyType == 0x00)
+          std::wcout << L"Khóa gốc";
+        else if (dilithiumKeyType == 0x01)
+          std::wcout << L"Khóa trung gian";
+        else if (dilithiumKeyType == 0x02)
+          std::wcout << L"Khóa đầu cuối";
+        std::wcout << std::endl;
         return !Sign::generateKey(cleanArgv[3], cleanArgv[4]);
       } else if (cleanArgv[2].compare(L"-s") == 0 && cleanArgv.size() == 7)
       {
