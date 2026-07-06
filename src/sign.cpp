@@ -567,6 +567,7 @@ static bool signCertFile(
  * - Đối với tệp mặc định (ký dữ liệu thông thường):
  *     [Nội dung tệp gốc]
  *     [32   byte: Mã băm của khóa dùng để ký (ID Khóa)]
+ *     [32   byte: Mã băm của tệp khóa ký (ID Khóa)]
  *     [4627 byte: Chữ ký Dilithium]
  */
 // TODO: Thiết kế tệp thực thi cho riêng hệ điều hành VNExos
@@ -866,7 +867,7 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
   inp.seekg(0, std::ios::beg);
 
   Crypto::Keccak::State state;
-  Crypto::Keccak::init(&state, 72);
+  Crypto::Keccak::init(&state, 136);
 
   const size_t         BUFFER_SIZE = 64 * 1024;
   std::vector<uint8_t> buffer(BUFFER_SIZE);
@@ -883,7 +884,7 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
     remaining -= bytesRead;
   }
 
-  std::vector<uint8_t> fileHash(128);
+  std::vector<uint8_t> fileHash(32);
   Crypto::Keccak::finalize(&state, 0x25);
   Crypto::Keccak::squeeze(fileHash.data(), fileHash.size(), &state);
 
