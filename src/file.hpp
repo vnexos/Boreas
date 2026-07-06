@@ -51,7 +51,7 @@ bool Read(const std::wstring& filePath, Content& fileContent);
  * @param type        Phân loại thực toán SHAV
  * @return false nếu có lỗi xãy ra trong quá trình đọc tệp
  */
-bool Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, int type = 1024);
+bool Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, int type = 256);
 
 /**
  * Sao chép tệp
