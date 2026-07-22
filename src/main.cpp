@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2026 VNExos Inc.
+ * Copyright (c) 2026 VNExos
  *
  * Được cấp phép theo Giấy phép GPLv3.
  * Xem tệp LICENSE tại thư mục gốc để biết thêm chi tiết.
