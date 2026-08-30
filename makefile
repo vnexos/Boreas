@@ -9,9 +9,9 @@
 TARGET = boreas
 
 # Trình biên dịch
-CC = gcc
-CXX = g++
-AS = gcc
+CC = clang
+CXX = clang++
+AS = clang
 
 # Cờ biên dịch
 CXXFLAGS = -Wall -Wextra -O2 -g -std=c++17 -Isrc

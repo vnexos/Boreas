@@ -75,14 +75,13 @@ void printUsage(const char* prog)
   wprintf(L"[+] Cờ bổ sung: \n");
   wprintf(L"    --verbose   [-v]                            : Xả ra mã Thập lục phân để dễ\n");
   wprintf(L"                                                  so sánh.\n");
-  wprintf(L"    --type      [-t] <loại tệp>                 : Xác định loại tệp cần ký.\n");
-  wprintf(L"                     elf                        : Chuyển đổi từ định dạng tệp\n");
-  wprintf(L"                                                  nhị phân ELF sang định dạng\n");
-  wprintf(L"                                                  VNEX và ký vào tệp.\n");
+  wprintf(L"    --type      [-t] <loại tệp>                 : Xác định loại tệp cần ký, mã hóa.\n");
+  wprintf(L"                     usx                        : Ký hoặc mã hóa cho tệp USX.\n");
   wprintf(L"                     cert                       : Ký một chứng chỉ (bằng khóa bí\n");
   wprintf(L"                                                  mật của một chứng chỉ cấp cao\n");
   wprintf(L"                                                  hơn) để xác lập chuỗi tin cậy.\n");
-  wprintf(L"                     (mặc định)                 : Ký vào cuối tệp.\n");
+  wprintf(L"                     (mặc định)                 : Thêm chữ ký hoặc khóa mã hóa vào\n");
+  wprintf(L"                                                  cuối tệp.\n");
   wprintf(L"    --dilithium [-k] <loại khóa>                : Xác định loại khóa dilithium\n");
   wprintf(L"                                                  mà chương trình sẽ sinh ra.\n");
   wprintf(L"                     intermediate               : Sinh ra khóa trung gian - Khóa\n");
@@ -102,7 +101,7 @@ void printUsage(const char* prog)
 }
 
 bool         bDumpFlag = false;
-std::wstring signType;
+std::wstring fileType;
 uint8_t      dilithiumKeyType = 0;
 
 bool SHAV(const std::wstring& input, const std::wstring& shavType)
@@ -160,7 +159,7 @@ int main(int argc, char* argv[])
     if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0)
       bDumpFlag = true;
     else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--type") == 0)
-      signType = std::move(Converter::Utf8ToWString(argv[++i]));
+      fileType = Converter::Utf8ToWString(argv[++i]);
     else if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--dilithium") == 0)
     {
       const char* keyType = argv[++i];

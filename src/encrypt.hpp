@@ -17,7 +17,7 @@ namespace Encrypt {
  * Tạo ra cặp khóa bí mật-công khai
  * @param secKeyPath đường dẫn tới tệp chứa khóa bí mật
  * @param pubKeyPath đường dẫn tới tệp chứa khóa công khai
- * @return false nếu xãy ra lỗi trong quá trình tạo khóa
+ * @return false nếu xảy ra lỗi trong quá trình tạo khóa
  */
 bool generateKey(const std::wstring& secKeyPath, const std::wstring& pubKeyPath);
 /**
@@ -25,7 +25,7 @@ bool generateKey(const std::wstring& secKeyPath, const std::wstring& pubKeyPath)
  * @param pubKeyPath đường dẫn tới khóa công khai
  * @param inPath     đường dẫn tới tệp cần mã hóa
  * @param outPath    đường dẫn tới tệp lưu dữ liệu mã hóa
- * @return false nếu xãy ra lỗi trong quá trình mã hóa
+ * @return false nếu xảy ra lỗi trong quá trình mã hóa
  */
 bool encryptFile(const std::wstring& pubKeyPath, const std::wstring& inPath, const std::wstring& outPath);
 /**
@@ -33,14 +33,14 @@ bool encryptFile(const std::wstring& pubKeyPath, const std::wstring& inPath, con
  * @param secKeyPath đường dẫn tới khóa bí mật
  * @param inPath     đường dẫn tới tệp cần giải mã
  * @param outPath    đường dẫn tới tệp lưu dữ liệu sau khi giải mã
- * @return false nếu xãy ra lỗi trong quá trình giải mã
+ * @return false nếu xảy ra lỗi trong quá trình giải mã
  */
 bool decryptFile(const std::wstring& secKeyPath, const std::wstring& inPath, const std::wstring& outPath);
 /**
  * Mã hóa/Giải mã tệp
  * @param inPath  đường dẫn tệp đầu vào
  * @param outPath đường dẫn tệp đầu ra
- * @return false nếu xãy ra lỗi trong quá trình giải mã
+ * @return false nếu xảy ra lỗi trong quá trình giải mã
  */
 bool aesEncrypt(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key);
 } // namespace Encrypt

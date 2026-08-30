@@ -52,8 +52,8 @@ void polyToBytes(uint8_t r[KYBER_POLYBYTES], const Polynomial* a);
 void polyFromMsg(Polynomial* r, const uint8_t msg[KYBER_INDCPA_MSGBYTES]);
 void polyToMsg(uint8_t msg[KYBER_INDCPA_MSGBYTES], const Polynomial* a);
 
-void polyCompress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES_DU], const Polynomial* a);
-void polyDecompress(Polynomial* r, const uint8_t a[KYBER_POLYCOMPRESSEDBYTES_DU]);
+void polyCompress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES_DV], const Polynomial* a);
+void polyDecompress(Polynomial* r, const uint8_t a[KYBER_POLYCOMPRESSEDBYTES_DV]);
 
 void polyVectorCompress(uint8_t r[KYBER_POLYVECCOMPRESSEDBYTES_DU], const PolynomialVector* a);
 void polyVectorDecompress(PolynomialVector* r, const uint8_t a[KYBER_POLYVECCOMPRESSEDBYTES_DU]);

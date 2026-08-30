@@ -17,7 +17,7 @@ namespace Sign {
  * Tạo ra cặp khóa bí mật-công khai
  * @param secKeyPath đường dẫn tới tệp chứa khóa bí mật
  * @param pubKeyPath đường dẫn tới tệp chứa khóa công khai
- * @return false nếu xãy ra lỗi trong quá trình tạo khóa
+ * @return false nếu xảy ra lỗi trong quá trình tạo khóa
  */
 bool generateKey(const std::wstring& secKeyPath, const std::wstring& pubKeyPath);
 /**
@@ -26,7 +26,7 @@ bool generateKey(const std::wstring& secKeyPath, const std::wstring& pubKeyPath)
  * @param pubKeyPath đường dẫn tới khóa công khai
  * @param inPath đường dẫn tới tệp cần ký
  * @param outPath đường dẫn tới tệp sau khi ký
- * @return false nếu xãy ra lỗi trong quá trình mã hóa
+ * @return false nếu xảy ra lỗi trong quá trình mã hóa
  */
 bool signFile(const std::wstring& secKeyPath, const std::wstring& pubKeyPath, const std::wstring& inPath, const std::wstring& outPath);
 /**
@@ -39,7 +39,7 @@ bool readMetadata(const std::wstring& pubKeyPath);
  * Xác thực tệp đã ký
  * @param pubKeyPath đường dẫn tới khóa bí mật
  * @param inPath đường dẫn tới tệp đã ký cần xác thực
- * @return false nếu xãy ra lỗi trong quá trình mã hóa
+ * @return false nếu xảy ra lỗi trong quá trình mã hóa
  */
 bool verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath);
 } // namespace Sign

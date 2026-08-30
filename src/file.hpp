@@ -10,6 +10,7 @@
 #ifndef __FILE_HPP
 #define __FILE_HPP
 
+#include <cstdint>
 #include <stdint.h>
 #include <string>
 #include <vector>
@@ -24,7 +25,7 @@ using Content = std::vector<uint8_t>;
  * @param filePath    Đường dẫn của tệp
  * @param fileContent Nội dung của tệp
  * @param offset      Vị trí bắt đầu đọc tệp
- * @return false nếu có lỗi xãy ra trong quá trình ghi tệp
+ * @return false nếu có lỗi xảy ra trong quá trình ghi tệp
  */
 bool Write(const std::wstring& filePath, const Content& fileContent, uint64_t offset = 0);
 
@@ -32,7 +33,7 @@ bool Write(const std::wstring& filePath, const Content& fileContent, uint64_t of
  * Thêm một mảng byte vào cuối tệp.
  * @param filePath    Đường dẫn của tệp
  * @param fileContent Nội dung của tệp
- * @return false nếu có lỗi xãy ra trong quá trình thêm vào cuối tệp
+ * @return false nếu có lỗi xảy ra trong quá trình thêm vào cuối tệp
  */
 bool Append(const std::wstring& filePath, const Content& fileContent);
 
@@ -40,16 +41,16 @@ bool Append(const std::wstring& filePath, const Content& fileContent);
  * Đọc nội dung của tệp vào một mảng byte.
  * @param filePath    Đường dẫn của tệp
  * @param fileContent Nội dung của tệp đã được đọc
- * @return false nếu có lỗi xãy ra trong quá trình đọc tệp
+ * @return false nếu có lỗi xảy ra trong quá trình đọc tệp
  */
-bool Read(const std::wstring& filePath, Content& fileContent);
+bool Read(const std::wstring& filePath, Content& fileContent, uint64_t length = 0, uint64_t seekPos = 0);
 
 /**
  * Băm một tệp bằng thuật toán SHAV.
  * @param filePath    Đường dẫn của tệp
  * @param fileContent Nội dung của tệp đã được đọc
  * @param type        Phân loại thực toán SHAV
- * @return false nếu có lỗi xãy ra trong quá trình đọc tệp
+ * @return false nếu có lỗi xảy ra trong quá trình đọc tệp
  */
 bool Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, int type = 256);
 
@@ -57,7 +58,7 @@ bool Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, int ty
  * Sao chép tệp
  * @param inPath  Tệp đầu vào
  * @param outPath Tệp đầu ra
- * @return false nếu có lỗi xãy ra trong quá trình sao chép tệp
+ * @return false nếu có lỗi xảy ra trong quá trình sao chép tệp
  */
 bool Copy(const std::wstring& inPath, const std::wstring& outPath);
 /**
@@ -66,6 +67,13 @@ bool Copy(const std::wstring& inPath, const std::wstring& outPath);
  * @return true nếu tệp tồn tại, false thì ngược lại
  */
 bool Exist(const std::wstring& path);
+
+/**
+ * Lấy kích thước của tệp
+ * @param path Tệp cần lấy kích thước
+ * @return kích thước của tệp
+ */
+size_t GetSize(const std::wstring& path);
 } // namespace File
 
 #endif // __FILE_HPP

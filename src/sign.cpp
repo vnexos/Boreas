@@ -14,6 +14,7 @@
 #include "crypto/sha3.hpp"
 #include "file.hpp"
 #include "sig/dilithium.hpp"
+#include "usx.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -34,14 +35,8 @@
   }                                                                 \
   return res;
 
-extern std::wstring signType;
+extern std::wstring fileType;
 extern uint8_t      dilithiumKeyType;
-
-static constexpr uint8_t rootKey[32] = {
-    0x56, 0x15, 0xaf, 0xba, 0x84, 0x68, 0xaa, 0x87,
-    0xb5, 0xdf, 0xd0, 0x97, 0xf2, 0x63, 0x73, 0xb6,
-    0xf7, 0x69, 0x33, 0xe2, 0xa4, 0x21, 0x1f, 0xce,
-    0x09, 0x4e, 0x11, 0x51, 0x74, 0xae, 0x37, 0xa9};
 
 void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring());
 
@@ -454,8 +449,6 @@ static bool signCertFile(
     const std::wstring& outPath,
     const SignerMeta&   metadata)
 {
-  (void)pubKeyPath;
-
   SignerMeta inMeta;
   bool       signedCert;
   uint64_t   inMetaOffset = readCertMetadata(inPath, inMeta, &signedCert);
@@ -558,19 +551,6 @@ static bool signCertFile(
   return true;
 }
 
-/**
- * Định dạng của tệp sau khi ký:
- * - Đối với khóa phân cấp:
- *     [2592 byte: Mảng khóa công khai]
- *     [x    byte: Khối siêu dữ liệu đã được chỉnh sửa]
- *     [4627 byte: Chữ ký]
- * - Đối với tệp mặc định (ký dữ liệu thông thường):
- *     [Nội dung tệp gốc]
- *     [32   byte: Mã băm của khóa dùng để ký (ID Khóa)]
- *     [32   byte: Mã băm của tệp khóa ký (ID Khóa)]
- *     [4627 byte: Chữ ký Dilithium]
- */
-// TODO: Thiết kế tệp thực thi cho riêng hệ điều hành VNExos
 static bool signDefaultFile(
     const std::wstring& secKeyPath,
     const std::wstring& pubKeyPath,
@@ -578,8 +558,6 @@ static bool signDefaultFile(
     const std::wstring& outPath,
     const SignerMeta&   metadata)
 {
-  (void)pubKeyPath;
-
   if (metadata.IsExpired())
   {
     std::wcout << L"[-] Khóa ký đã hết hạn!" << std::endl;
@@ -650,6 +628,129 @@ static bool signDefaultFile(
   return true;
 }
 
+static bool signUSXFile(const std::wstring& secKeyPath,
+                        const std::wstring& pubKeyPath,
+                        const std::wstring& inPath,
+                        const std::wstring& outPath,
+                        const SignerMeta&   metadata)
+{
+  USXHeader header;
+  // Xác thực tệp USX
+  if (!USX::verifyHeader(inPath, &header))
+  {
+    std::wcout << L"[-] Không thể xác thực tệp USX: " << inPath << std::endl;
+    return false;
+  }
+
+  if (header.Flags & USX_HFLAG_SIGNED)
+  {
+    std::wcout << L"[-] Tệp USX đã được ký từ trước: " << inPath << std::endl;
+    return false;
+  }
+
+  if (metadata.IsExpired())
+  {
+    std::wcout << L"[-] Khóa ký đã hết hạn!" << std::endl;
+    return false;
+  }
+
+  // Sao chép nội dung tệp gốc
+  if (!File::Copy(inPath, outPath))
+  {
+    std::wcout << L"[-] Không thể sao chép tệp: " << inPath << " -> " << outPath << std::endl;
+    return false;
+  }
+
+  // Băm tệp chứng chỉ của người ký
+  std::vector<uint8_t> certHash;
+  if (!File::Hash(pubKeyPath, certHash))
+  {
+    std::wcout << L"[-] Không thể băm tệp chứng chỉ ký: " << pubKeyPath << std::endl;
+    return false;
+  }
+
+  // Thay đổi cờ để đánh dấu rằng tệp này đã được ký
+  header.Flags |= USX_HFLAG_SIGNED;
+  if (!USX::putHeader(outPath, &header))
+  {
+    return false;
+  }
+
+  // Đặt giá trị cho bảng Bảo mật
+  USXSecurity secTable     = USX::getSecurityTable(outPath);
+  secTable.SignatureOffset = File::GetSize(outPath);
+  secTable.SignatureSize   = DILITHIUM_BYTES;
+  if (!USX::putSecurityTable(outPath, &secTable))
+  {
+    return false;
+  }
+
+  // Khối siêu dữ liệu của tệp mặc định chứa ID khóa ký (32 byte) và Mã băm chứng chỉ (32 byte)
+  std::vector<uint8_t> metaBytes;
+  metaBytes.insert(metaBytes.end(), metadata.currentKey, metadata.currentKey + 32);
+  metaBytes.insert(metaBytes.end(), certHash.begin(), certHash.begin() + 32);
+
+  if (!File::Append(outPath, metaBytes))
+  {
+    std::wcout << L"[-] Không thể ghi siêu dữ liệu vào tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  // Băm tệp sau khi chỉnh sửa
+  std::vector<uint8_t> fileHash;
+  if (!File::Hash(outPath, fileHash))
+  {
+    std::wcout << L"[-] Không thể băm tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  // Đọc khóa bí mật
+  std::vector<uint8_t> secretKey;
+  if (!File::Read(secKeyPath, secretKey))
+  {
+    std::wcout << L"[-] Không thể đọc tệp: " << secKeyPath << std::endl;
+    return false;
+  }
+
+  // Tạo chữ ký
+  std::vector<uint8_t> signature(DILITHIUM_BYTES);
+  size_t               signatureLength;
+  Dilithium::sign(
+      signature.data(), &signatureLength,
+      fileHash.data(), fileHash.size(),
+      secretKey.data());
+
+  secureZeroize(secretKey.data(), secretKey.size());
+
+  // Nối chữ ký vào cuối tệp
+  if (!File::Append(outPath, signature))
+  {
+    std::wcout << L"[-] Không thể thêm chữ ký vào tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  std::wcout << L"[+] Ký thành công tệp dữ liệu: " << outPath << std::endl;
+
+  return true;
+}
+
+/**
+ * Định dạng của tệp sau khi ký:
+ * - Đối với khóa phân cấp:
+ *     [2592 byte: Mảng khóa công khai]
+ *     [x    byte: Khối siêu dữ liệu đã được chỉnh sửa]
+ *     [4627 byte: Chữ ký]
+ * - Đối với tệp USX:
+ *     [Nội dung tệp gốc (đã thay đổi bảng Bảo mật)]
+ *     [32   byte: Mã băm của khóa dùng để ký]
+ *     [32   byte: Mã băm của tệp khóa ký]
+ *     [4627 byte: Chữ ký]
+ * - Đối với tệp mặc định (ký dữ liệu thông thường):
+ *     [Nội dung tệp gốc]
+ *     [32   byte: Mã băm của khóa dùng để ký (ID Khóa)]
+ *     [32   byte: Mã băm của tệp khóa ký]
+ *     [4627 byte: Chữ ký Dilithium]
+ */
 bool Sign::signFile(
     const std::wstring& secKeyPath,
     const std::wstring& pubKeyPath,
@@ -665,9 +766,14 @@ bool Sign::signFile(
     return false;
   }
 
-  if (signType.compare(L"cert") == 0)
+  if (fileType.compare(L"cert") == 0)
   {
     return signCertFile(
+        secKeyPath, pubKeyPath,
+        inPath, outPath, metadata);
+  } else if (fileType.compare(L"usx") == 0)
+  {
+    return signUSXFile(
         secKeyPath, pubKeyPath,
         inPath, outPath, metadata);
   }

@@ -9,6 +9,7 @@
  */
 #include "file.hpp"
 #include "crypto/sha3.hpp"
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 
@@ -57,7 +58,7 @@ bool File::Append(const std::wstring& filePath, const Content& fileContent)
   return true;
 }
 
-bool File::Read(const std::wstring& filePath, File::Content& fileContent)
+bool File::Read(const std::wstring& filePath, Content& fileContent, uint64_t length, uint64_t seekPos)
 {
   // Mở tệp ở chế độ đọc nhị phân và dịch con trỏ xuống cuối tệp (std::ios::ate) để lấy kích thước
 #if defined(_WIN32)
@@ -74,16 +75,18 @@ bool File::Read(const std::wstring& filePath, File::Content& fileContent)
   // Lấy kích thước tệp dựa vào vị trí của con trỏ hiện tại
   std::streamsize fileSize = inp.tellg();
 
+  uint64_t sizeToRead = length == 0 ? fileSize : length;
+
   if (fileSize > 0)
   {
     // Cấp phát trước bộ nhớ vector để tối ưu hiệu năng (tránh cấp phát nhiều lần)
-    fileContent.resize(static_cast<size_t>(fileSize));
+    fileContent.resize(static_cast<size_t>(sizeToRead));
 
     // Đưa con trỏ về vị trí đầu tệp để bắt đầu đọc
-    inp.seekg(0, std::ios::beg);
+    inp.seekg(seekPos, std::ios::beg);
 
     // Đọc toàn bộ dữ liệu vào vector
-    inp.read(reinterpret_cast<char*>(fileContent.data()), fileSize);
+    inp.read(reinterpret_cast<char*>(fileContent.data()), sizeToRead);
   }
 
   inp.close();
@@ -92,8 +95,10 @@ bool File::Read(const std::wstring& filePath, File::Content& fileContent)
 
 bool File::Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, int type)
 {
-  size_t rate;
-  size_t outputLen;
+  const size_t         BUFFER_SIZE = 128 * 1024;
+  std::vector<uint8_t> streamBuffer(BUFFER_SIZE);
+  size_t               rate;
+  size_t               outputLen;
 
   switch (type)
   {
@@ -115,10 +120,14 @@ bool File::Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, 
 
   // Mở tệp ở chế độ đọc nhị phân
 #if defined(_WIN32)
-  std::ifstream inp(filePath, std::ios::in | std::ios::binary | std::ios::ate);
+  std::ifstream inp;
+  inp.rdbuf()->pubsetbuf(reinterpret_cast<char*>(streamBuffer.data()), streamBuffer.size());
+  inp.open(filePath, std::ios::in | std::ios::binary);
 #else
   std::string   utf8FilePath(filePath.begin(), filePath.end());
-  std::ifstream inp(utf8FilePath, std::ios::in | std::ios::binary);
+  std::ifstream inp;
+  inp.rdbuf()->pubsetbuf(reinterpret_cast<char*>(streamBuffer.data()), streamBuffer.size());
+  inp.open(utf8FilePath, std::ios::in | std::ios::binary);
 #endif
 
   if (!inp)
@@ -130,13 +139,12 @@ bool File::Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, 
   Crypto::Keccak::State state;
   init(&state, rate);
 
-  const size_t         BUFFER_SIZE = 64 * 1024;
-  std::vector<uint8_t> buffer(BUFFER_SIZE);
+  std::vector<uint8_t> readBuffer(BUFFER_SIZE);
 
-  while (inp.read(reinterpret_cast<char*>(buffer.data()), buffer.size()) || inp.gcount() > 0)
+  while (inp.read(reinterpret_cast<char*>(readBuffer.data()), readBuffer.size()) || inp.gcount() > 0)
   {
     uint64_t bytesRead = inp.gcount();
-    Crypto::Keccak::absorb(&state, buffer.data(), bytesRead);
+    Crypto::Keccak::absorb(&state, readBuffer.data(), bytesRead);
   }
 
   Crypto::Keccak::finalize(&state, 0x25);
@@ -168,4 +176,15 @@ bool File::Exist(const std::wstring& path)
 
   bool result = std::filesystem::is_regular_file(path, ec);
   return !ec && result;
+}
+
+size_t File::GetSize(const std::wstring& path)
+{
+  try
+  {
+    return std::filesystem::file_size(path);
+  } catch (const std::filesystem::filesystem_error&)
+  {
+    return 0;
+  }
 }
