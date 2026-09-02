@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <string>
+#include <vector>
 
 #define USX_MAGIC_0 'U'
 #define USX_MAGIC_1 'S'
@@ -212,6 +213,8 @@ bool verifyHeader(const std::wstring& path, USXHeader* _header = nullptr);
 
 USXSecurity getSecurityTable(const std::wstring& path);
 bool        putSecurityTable(const std::wstring& path, const USXSecurity* security);
+
+bool getSections(const std::wstring& path, std::vector<USXSection>& sections);
 } // namespace USX
 
 #endif // __USX_H

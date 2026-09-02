@@ -64,6 +64,9 @@ void printUsage(const char* prog)
   wprintf(L"                                                  Kyber kết hợp AES-256.\n");
   wprintf(L"    -d <tệp khóa bí mật> <tệp vào> <tệp ra>     : Giải mã tệp bằng khóa bí mật\n");
   wprintf(L"                                                  Kyber kết hợp AES-256.\n");
+  wprintf(L"    -kem <tệp khóa công khai> <khóa 32 byte>\n");
+  wprintf(L"         <tệp ra>                               : Đóng gói khóa 32 Byte.\n");
+  wprintf(L"    -kdm <tệp khóa bí mật> <tệp KEM>            : Mở gói khóa 32 Byte.\n");
   wprintf(L"[*] Ký tệp:     %s -sign\n", prog);
   wprintf(L"    -g <tệp khóa bí mật> <tệp chứng chỉ>        : Sinh ra cặp khóa bí mật và chứng\n");
   wprintf(L"                                                  chỉ Dilithium.\n");
@@ -97,7 +100,7 @@ void printUsage(const char* prog)
   wprintf(L"                                                  NÊN SINH KHÓA NÀY VỚI MỤC ĐÍCH\n");
   wprintf(L"                                                  NGHIÊN CỨU.\n");
   wprintf(L"[*] Mã hóa đối xứng: %s -aes256 <tệp vào> <tệp ra> <32 byte SHA3>\n", prog);
-  wprintf(L"[*] Băm tệp: %s -shav <256|512|1024> <tên tệp|chuỗi byte>\n", prog);
+  wprintf(L"[*] Băm tệp        : %s -shav <256|512|1024> <tên tệp|chuỗi byte>\n", prog);
 }
 
 bool         bDumpFlag = false;

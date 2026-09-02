@@ -13,7 +13,6 @@
 #include <array>
 #include <cstdint>
 #include <iostream>
-#include <vector>
 
 constexpr auto generateCRC32Table()
 {
@@ -69,7 +68,7 @@ bool USX::putHeader(const std::wstring& path, USXHeader* header)
   header->HeaderCRC32 = crc;
 
   File::Content rawData((uint8_t*)header, ((uint8_t*)header) + sizeof(USXHeader));
-  if (!File::Write(path, rawData))
+  if (!File::Write(path, rawData, 0))
   {
     std::wcout << L"[-] Có lỗi xảy ra trong quá trình ghi tệp: " << path << std::endl;
     return false;
@@ -127,12 +126,57 @@ bool USX::putSecurityTable(const std::wstring& path, const USXSecurity* security
   uint64_t offset = header.SecurityOffset;
   uint32_t size   = header.SecuritySize;
 
-  File::Content data((uint8_t*)security, ((uint8_t*)security) + size);
+  const uint8_t* secBytes = reinterpret_cast<const uint8_t*>(security);
+  File::Content  data(secBytes, secBytes + size);
 
   if (!File::Write(path, data, offset))
   {
     std::wcout << L"[-] Có lỗi xảy trong quá trình ghi vào bảng Bảo mật: " << path << std::endl;
     return false;
+  }
+
+  return true;
+}
+
+bool USX::getSections(const std::wstring& path, std::vector<USXSection>& sections)
+{
+  USXHeader header = getHeader(path);
+
+  sections.clear();
+
+  if (header.ArchTableCount == 0)
+    return true;
+
+  File::Content rawArchData;
+  if (!File::Read(path, rawArchData, header.ArchTableSize * header.ArchTableCount, header.ArchTableOffset))
+  {
+    std::wcout << L"[-] Có lỗi xảy ra trong quá trình đọc dữ liệu Kiến trúc: " << path << std::endl;
+    return false;
+  }
+
+  uint8_t* archPtr = rawArchData.data();
+  for (uint16_t i = 0; i < header.ArchTableCount; ++i)
+  {
+    USXArch* arch = (USXArch*)archPtr;
+
+    if (arch->SectionTableCount > 0)
+    {
+      File::Content rawSectionData;
+      if (!File::Read(path, rawSectionData, arch->SectionTableSize * arch->SectionTableCount, arch->SectionTableOffset))
+      {
+        std::wcout << L"[-] Có lỗi xảy ra trong quá trình đọc dữ liệu Phân vùng: " << path << std::endl;
+        return false;
+      }
+
+      uint8_t* sectionPtr = rawSectionData.data();
+      for (uint16_t j = 0; j < arch->SectionTableCount; ++j)
+      {
+        sections.push_back(*(USXSection*)sectionPtr);
+        sectionPtr += arch->SectionTableSize;
+      }
+    }
+
+    archPtr += header.ArchTableSize;
   }
 
   return true;

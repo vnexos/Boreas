@@ -13,14 +13,19 @@
 #include "crypto/randombytes.hpp"
 #include "file.hpp"
 #include "kem/kyber.hpp"
+#include "sig/dilithium.hpp"
+#include "usx.hpp"
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <string>
 #include <vector>
 
-extern bool bDumpFlag;
-void        print_hex(const uint8_t* data, uint64_t len);
+extern bool         bDumpFlag;
+extern std::wstring fileType;
+
+void print_hex(const uint8_t* data, uint64_t len);
 
 // Xóa sạch vùng nhớ nhạy cảm
 inline void secureZeroize(void* p, size_t n)
@@ -240,7 +245,7 @@ static std::vector<uint8_t> getKey(const std::wstring& key)
   return result;
 }
 
-bool Encrypt::aesEncrypt(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key)
+static bool encryptDefaultFile(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key)
 {
   std::vector<uint8_t> byteKey     = getKey(key);
   std::vector<uint8_t> magicNumber = {0, 0, 0, 'S', 'E', 'A', 'N', 'V'};
@@ -320,4 +325,117 @@ bool Encrypt::aesEncrypt(const std::wstring& inPath, const std::wstring& outPath
   }
 
   return true;
+}
+
+static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key, USXHeader* header)
+{
+  // Kiểm tra các điều kiện để Mã hóa
+  if (header->Flags & USX_HFLAG_ENCRYPTED)
+  {
+    std::wcout << L"[-] Tệp đã được mã hóa từ trước: " << inPath << std::endl;
+    return false;
+  }
+  if (header->Flags & USX_HFLAG_SIGNED)
+  {
+    std::wcout << L"[-] Không thể mã hóa tệp đã ký: " << inPath << std::endl;
+    return false;
+  }
+
+  // Lấy giá trị của khóa
+  std::vector<uint8_t> aesKey = getKey(key);
+  if (aesKey.size() != 32)
+  {
+    std::wcout << L"[-] Kích thước khóa AES không hợp lệ: " << key << std::endl;
+    return false;
+  }
+
+  // Sao chép tệp
+  if (!File::Copy(inPath, outPath))
+  {
+    std::wcout << L"[-] Không thể sao chép tệp: " << inPath << " -> " << outPath << std::endl;
+    return false;
+  }
+
+  // Thay đổi bảng tiêu đề
+  uint64_t size  = File::GetSize(outPath);
+  header->Flags |= USX_HFLAG_ENCRYPTED | USX_HFLAG_HAS_KEM;
+  if (!USX::putHeader(outPath, header))
+  {
+    return false;
+  }
+
+  // Thay đổi bảng bảo mật
+  USXSecurity secTable;
+  secTable.SignatureOffset = size;
+  secTable.SignatureSize   = DILITHIUM_BYTES;
+  secTable.KEMOffset       = secTable.SignatureOffset + ((secTable.SignatureSize + 7) & ~(uint64_t)7);
+  secTable.KEMSize         = KYBER_INDCCA_CIPHERTEXTBYTES;
+  if (!USX::putSecurityTable(outPath, &secTable))
+    return false;
+
+  // Thêm một vùng rỗng để chứa chữ ký
+  File::Content zeroDilithium(secTable.KEMOffset - secTable.SignatureOffset);
+  secureZeroize(zeroDilithium.data(), zeroDilithium.size());
+  if (!File::Append(outPath, zeroDilithium))
+  {
+    std::wcout << L"[-] Không thể ghi tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  // Lấy tất cả các phân vùng
+  std::vector<USXSection> sections;
+  if (!USX::getSections(outPath, sections))
+  {
+    return false;
+  }
+
+  // Lọc phân vùng
+  std::vector<uint64_t>   sectionBlockOffsets;
+  std::vector<USXSection> filteredSections;
+  for (auto& section : sections)
+  {
+    if (std::find(sectionBlockOffsets.begin(), sectionBlockOffsets.end(), section.BlockOffset) == sectionBlockOffsets.end())
+    {
+      filteredSections.push_back(section);
+      sectionBlockOffsets.push_back(section.BlockOffset);
+    }
+  }
+
+  // Khởi tạo phần mã hóa
+  Crypto::AES256::AES256Context ctx;
+  Crypto::AES256::init(&ctx, aesKey.data());
+
+  // Mã hóa từng phân vùng
+  for (auto& section : filteredSections)
+  {
+    if (section.Flags & USX_SFLAG_ZERO_INIT || section.BlockSize == 0)
+      continue;
+    File::Content rawSectionData;
+    if (!File::Read(outPath, rawSectionData, section.BlockSize, section.BlockOffset))
+    {
+      std::wcout << L"[-] Không thể đọc phân vùng từ tệp: " << outPath << std::endl;
+      return false;
+    }
+
+    std::vector<uint8_t> encryptedSection(rawSectionData.size());
+    Crypto::AES256::counter(&ctx, section.InitializationVector, encryptedSection.data(), rawSectionData.data(), section.BlockSize);
+
+    if (!File::Write(outPath, encryptedSection, section.BlockOffset))
+    {
+      std::wcout << L"[-] Không thể ghi phân vùng vào tệp: " << outPath << std::endl;
+      return false;
+    }
+  }
+
+  std::wcout << L"[+] Mã hóa USX thành công vào tệp: " << outPath << std::endl;
+
+  return true;
+}
+
+bool Encrypt::aesEncrypt(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key)
+{
+  USXHeader header;
+  if (USX::verifyHeader(inPath, &header))
+    return encryptUSX(inPath, outPath, key, &header);
+  return encryptDefaultFile(inPath, outPath, key);
 }

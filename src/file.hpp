@@ -27,7 +27,7 @@ using Content = std::vector<uint8_t>;
  * @param offset      Vị trí bắt đầu đọc tệp
  * @return false nếu có lỗi xảy ra trong quá trình ghi tệp
  */
-bool Write(const std::wstring& filePath, const Content& fileContent, uint64_t offset = 0);
+bool Write(const std::wstring& filePath, const Content& fileContent, uint64_t offset = 0xffffffffffffffff);
 
 /**
  * Thêm một mảng byte vào cuối tệp.

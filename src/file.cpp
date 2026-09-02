@@ -18,10 +18,10 @@ bool File::Write(const std::wstring& filePath, const File::Content& fileContent,
   // Mở tệp ở chế độ ghi nhị phân (std::ios::binary)
   // Nếu dùng trên Windows, std::ofstream hỗ trợ nhận std::wstring trực tiếp
 #if defined(_WIN32)
-  std::ofstream out(filePath, (offset ? std::ios::in | std::ios::out : std::ios::out) | std::ios::binary);
+  std::ofstream out(filePath, (offset != UINT64_MAX ? std::ios::in | std::ios::out : std::ios::out) | std::ios::binary);
 #else
   std::string   utf8FilePath(filePath.begin(), filePath.end());
-  std::ofstream out(utf8FilePath, (offset ? std::ios::in | std::ios::out : std::ios::out) | std::ios::binary);
+  std::ofstream out(utf8FilePath, (offset != UINT64_MAX ? std::ios::in | std::ios::out : std::ios::out) | std::ios::binary);
 #endif
 
   if (!out)
