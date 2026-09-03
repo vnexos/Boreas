@@ -13,6 +13,7 @@
 #include "encrypt.hpp"
 #include "file.hpp"
 #include "sign.hpp"
+#include "utils.hpp"
 
 #include <clocale>
 #include <iomanip>
@@ -24,31 +25,6 @@
 #include <vector>
 
 using namespace Crypto;
-
-// Hàm tiện ích để in mảng byte dạng Thập lục phân để dễ so sánh
-void print_hex(const uint8_t* data, uint64_t len)
-{
-  uint64_t lines = len / 0x10 + 1;
-
-  std::wcout << "\x1b[38;5;10m        ";
-  for (uint8_t i = 0; i < 0x10; ++i)
-    std::wcout << "  " << std::hex << std::setw(2) << std::setfill(L'0') << i;
-
-  std::wcout << "\x1b[0m" << std::endl;
-
-  uint64_t tmpIndex;
-  for (uint64_t i = 0; i < lines; ++i)
-  {
-    std::wcout << L"\x1b[38;5;10m" << std::hex << std::setw(8) << std::setfill(L'0') << (int)i << L"\x1b[0m";
-    for (uint64_t j = 0; j < 0x10 && (tmpIndex = i * 0x10 + j) < len; ++j)
-    {
-      std::wcout << "  " << std::setw(2) << std::setfill(L'0') << (int)data[tmpIndex];
-    }
-    std::wcout << "\x1b[0m" << std::endl;
-  }
-  std::wcout << std::endl
-             << std::dec << std::setfill(L' ');
-}
 
 void printUsage(const char* prog)
 {
@@ -113,11 +89,15 @@ bool SHAV(const std::wstring& input, const std::wstring& shavType)
   std::vector<uint8_t> res;
   if (File::Exist(input))
   {
+    if (bDumpFlag)
+      std::wcout << L"[*] Đang băm tệp: " << input << L" (Thuật toán: SHA3-" << type << L", Kích thước: " << File::GetSize(input) << L" byte)\n";
     if (!File::Hash(input, res, type))
       return false;
   } else
   {
     std::string strForHashing = Converter::WStringToUtf8(input);
+    if (bDumpFlag)
+      std::wcout << L"[*] Đang băm chuỗi văn bản (Độ dài: " << strForHashing.size() << L" byte, Thuật toán: SHA3-" << type << L")\n";
     res.resize(type / 8);
 
     if (type == 256)
@@ -127,6 +107,9 @@ bool SHAV(const std::wstring& input, const std::wstring& shavType)
     else if (type == 1024)
       Crypto::VNExos::sha1024(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
   }
+
+  if (bDumpFlag)
+    dump(res.data(), res.size(), L"Mã băm kết quả (" + std::to_wstring(res.size()) + L" byte)");
 
   for (uint64_t i = 0; i < res.size(); ++i)
     std::wcout << std::hex << std::setfill(L'0') << std::setw(2) << static_cast<int>(res[i]);
@@ -189,6 +172,14 @@ int main(int argc, char* argv[])
       } else if (cleanArgv[2].compare(L"-d") == 0 && cleanArgv.size() == 6) // Giải mã tệp
       {
         return !Encrypt::decryptFile(cleanArgv[3], cleanArgv[4], cleanArgv[5]);
+      } else if (cleanArgv[2].compare(L"-kem") == 0 && cleanArgv.size() == 6)
+      {
+        std::wcout << L"Ahihi" << std::endl;
+        return 0;
+      } else if (cleanArgv[2].compare(L"-kdm") == 0 && cleanArgv.size() == 5)
+      {
+        std::wcout << L"Bhihi" << std::endl;
+        return 0;
       } else
       {
         wprintf(L"[-] Lệnh sử dụng -encrypt không hợp lệ!\n");

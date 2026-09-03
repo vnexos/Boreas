@@ -15,6 +15,7 @@
 #include "kem/kyber.hpp"
 #include "sig/dilithium.hpp"
 #include "usx.hpp"
+#include "utils.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -22,10 +23,7 @@
 #include <string>
 #include <vector>
 
-extern bool         bDumpFlag;
 extern std::wstring fileType;
-
-void print_hex(const uint8_t* data, uint64_t len);
 
 // Xóa sạch vùng nhớ nhạy cảm
 inline void secureZeroize(void* p, size_t n)
@@ -33,18 +31,6 @@ inline void secureZeroize(void* p, size_t n)
   volatile uint8_t* vp = (volatile uint8_t*)p;
   while (n--)
     *vp++ = 0;
-}
-
-void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring())
-{
-  if (bDumpFlag)
-  {
-    if (label.empty())
-      std::wcout << L"    Mã thô: " << std::endl;
-    else
-      std::wcout << L"    " << label << L':' << std::endl;
-    print_hex(data, len);
-  }
 }
 
 bool Encrypt::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKeyPath)
@@ -68,7 +54,6 @@ bool Encrypt::generateKey(const std::wstring& secKeyPath, const std::wstring& pu
   }
 
   std::wcout << L"[+] Khóa bí mật được lưu ở: " << secKeyPath << " (" << KYBER_INDCCA_SECKEYBYTES << " byte)\n";
-  dump(sk, KYBER_INDCCA_SECKEYBYTES);
   std::wcout << L"[+] Khóa công khai được lưu ở: " << pubKeyPath << " (" << KYBER_INDCCA_PUBKEYBYTES << " byte)\n";
   dump(pk, KYBER_INDCCA_PUBKEYBYTES);
 
@@ -183,6 +168,9 @@ bool Encrypt::decryptFile(const std::wstring& secKeyPath, const std::wstring& in
   const uint8_t* aes    = encryptedData.data() + headerSize;
   size_t         aesLen = encryptedData.size() - headerSize;
 
+  dump(ct, KYBER_INDCCA_CIPHERTEXTBYTES, L"Bản mã Kyber trích xuất");
+  dump(iv, AES256_BLOCKLEN, L"Mảng khởi tạo (IV) trích xuất");
+
   // Mở gói khóa Kyber
   uint8_t ss[KYBER_SSBYTES];
   Kyber::decapsulate(ss, ct, secretKey.data());
@@ -201,6 +189,8 @@ bool Encrypt::decryptFile(const std::wstring& secKeyPath, const std::wstring& in
   // Xóa sạch dữ liệu khóa AES
   secureZeroize(&context, sizeof(context));
   secureZeroize(ss, sizeof(ss));
+
+  dump(data.data(), data.size(), L"Dữ liệu sau khi giải mã");
 
   // Lưu lại dữ liệu giải mã
   if (!File::Write(outPath, data))
@@ -278,11 +268,14 @@ static bool encryptDefaultFile(const std::wstring& inPath, const std::wstring& o
     uint8_t iv[AES256_BLOCKLEN];
 
     Crypto::randombytes(iv, sizeof(iv));
+    dump(iv, sizeof(iv), L"Mảng khởi tạo (IV)");
 
     Crypto::AES256::counter(&context, iv, result.data(), result.data(), result.size());
 
     result.insert(result.end(), iv, iv + sizeof(iv));
     result.insert(result.end(), magicNumber.begin(), magicNumber.end());
+
+    dump(result.data(), result.size(), L"Toàn bộ gói dữ liệu đã mã hóa");
 
     secureZeroize(&context, sizeof(context));
     secureZeroize(byteKey.data(), byteKey.size());
@@ -301,13 +294,16 @@ static bool encryptDefaultFile(const std::wstring& inPath, const std::wstring& o
 
     uint8_t iv[AES256_BLOCKLEN];
 
-    for (uint64_t i = 0; i < AES256_BLOCKLEN; ++i)
+    for (uint64_t j = 0; j < AES256_BLOCKLEN; ++j)
     {
-      iv[i] = result[result.size() - 24 + i];
+      iv[j] = result[result.size() - 24 + j];
     }
+    dump(iv, sizeof(iv), L"Mảng khởi tạo (IV) trích xuất");
 
     result.resize(result.size() - 24);
     Crypto::AES256::counter(&context, iv, result.data(), result.data(), result.size());
+
+    dump(result.data(), result.size(), L"Dữ liệu sau khi giải mã");
 
     secureZeroize(&context, sizeof(context));
     secureZeroize(byteKey.data(), byteKey.size());
@@ -349,6 +345,17 @@ static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, 
     return false;
   }
 
+  if (bDumpFlag)
+  {
+    std::wcout << L"[*] Thông tin Tiêu đề USX (USXHeader):\n";
+    std::wcout << L"    Phiên bản USX : " << static_cast<int>(header->Version) << L"\n";
+    std::wcout << L"    Loại tệp      : " << static_cast<int>(header->Type) << L"\n";
+    std::wcout << L"    Kiến trúc đích: 0x" << std::hex << header->TargetArch << std::dec << L"\n";
+    std::wcout << L"    Cờ điều khiển : 0x" << std::hex << header->Flags << std::dec << L"\n";
+    std::wcout << L"    Điểm vào RAM  : 0x" << std::hex << header->EntryPoint << std::dec << L"\n";
+    std::wcout << L"    Số lượng Arch : " << header->ArchTableCount << L"\n";
+  }
+
   // Sao chép tệp
   if (!File::Copy(inPath, outPath))
   {
@@ -370,6 +377,15 @@ static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, 
   secTable.SignatureSize   = DILITHIUM_BYTES;
   secTable.KEMOffset       = secTable.SignatureOffset + ((secTable.SignatureSize + 7) & ~(uint64_t)7);
   secTable.KEMSize         = KYBER_INDCCA_CIPHERTEXTBYTES;
+
+  if (bDumpFlag)
+  {
+    std::wcout << L"[*] Cập nhật Bảng bảo mật (USXSecurity):\n";
+    std::wcout << L"    Vị trí Chữ ký : 0x" << std::hex << secTable.SignatureOffset << L", Kích thước: " << std::dec << secTable.SignatureSize << L" byte\n";
+    std::wcout << L"    Vị trí Gói KEM: 0x" << std::hex << secTable.KEMOffset << L", Kích thước: " << std::dec << secTable.KEMSize << L" byte\n";
+    dump(reinterpret_cast<const uint8_t*>(&secTable), sizeof(USXSecurity), L"Bảng bảo mật thô (24 byte)");
+  }
+
   if (!USX::putSecurityTable(outPath, &secTable))
     return false;
 
@@ -401,31 +417,57 @@ static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, 
     }
   }
 
+  if (bDumpFlag)
+    std::wcout << L"[*] Tìm thấy " << sections.size() << L" phân vùng (" << filteredSections.size() << L" phân vùng độc lập để mã hóa)\n";
+
   // Khởi tạo phần mã hóa
   Crypto::AES256::AES256Context ctx;
   Crypto::AES256::init(&ctx, aesKey.data());
 
   // Mã hóa từng phân vùng
-  for (auto& section : filteredSections)
+  for (size_t idx = 0; idx < filteredSections.size(); ++idx)
   {
+    auto& section = filteredSections[idx];
     if (section.Flags & USX_SFLAG_ZERO_INIT || section.BlockSize == 0)
+    {
+      if (bDumpFlag)
+        std::wcout << L"[*] Bỏ qua phân vùng ZERO_INIT/rỗng tại offset 0x" << std::hex << section.BlockOffset << std::dec << std::endl;
       continue;
+    }
     File::Content rawSectionData;
     if (!File::Read(outPath, rawSectionData, section.BlockSize, section.BlockOffset))
     {
       std::wcout << L"[-] Không thể đọc phân vùng từ tệp: " << outPath << std::endl;
+      secureZeroize(&ctx, sizeof(ctx));
+      secureZeroize(aesKey.data(), aesKey.size());
       return false;
+    }
+
+    if (bDumpFlag)
+    {
+      std::wcout << L"[*] Đang mã hóa phân vùng [" << idx << L"] tại Offset 0x" << std::hex << section.BlockOffset
+                 << L" (Kích thước: 0x" << section.BlockSize << L" byte)" << std::dec << std::endl;
+      dump(section.InitializationVector, 16, L"Mảng khởi tạo (IV) phân vùng");
+      dump(rawSectionData.data(), rawSectionData.size(), L"Dữ liệu phân vùng trước mã hóa");
     }
 
     std::vector<uint8_t> encryptedSection(rawSectionData.size());
     Crypto::AES256::counter(&ctx, section.InitializationVector, encryptedSection.data(), rawSectionData.data(), section.BlockSize);
 
+    if (bDumpFlag)
+      dump(encryptedSection.data(), encryptedSection.size(), L"Dữ liệu phân vùng sau mã hóa");
+
     if (!File::Write(outPath, encryptedSection, section.BlockOffset))
     {
       std::wcout << L"[-] Không thể ghi phân vùng vào tệp: " << outPath << std::endl;
+      secureZeroize(&ctx, sizeof(ctx));
+      secureZeroize(aesKey.data(), aesKey.size());
       return false;
     }
   }
+
+  secureZeroize(&ctx, sizeof(ctx));
+  secureZeroize(aesKey.data(), aesKey.size());
 
   std::wcout << L"[+] Mã hóa USX thành công vào tệp: " << outPath << std::endl;
 

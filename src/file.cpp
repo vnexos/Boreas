@@ -27,7 +27,7 @@ bool File::Write(const std::wstring& filePath, const File::Content& fileContent,
   if (!out)
     return false;
 
-  if (offset != 0)
+  if (offset != 0 && offset != UINT64_MAX)
     out.seekp(offset, std::ios::beg);
   // Ghi toàn bộ mảng byte vào tệp
   if (!fileContent.empty())

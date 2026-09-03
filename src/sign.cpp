@@ -15,6 +15,7 @@
 #include "file.hpp"
 #include "sig/dilithium.hpp"
 #include "usx.hpp"
+#include "utils.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -37,8 +38,6 @@
 
 extern std::wstring fileType;
 extern uint8_t      dilithiumKeyType;
-
-void dump(const uint8_t* data, const uint64_t len, const std::wstring label = std::wstring());
 
 // Xóa sạch vùng nhớ nhạy cảm
 inline void secureZeroize(void* p, size_t n)
@@ -402,7 +401,6 @@ bool Sign::generateKey(const std::wstring& secKeyPath, const std::wstring& pubKe
     std::wcout << L"[+] Khóa riêng tư  được lưu vào: " << secKeyPath
                << L" (" << DILITHIUM_SECRETKEYBYTES << L" byte)"
                << std::endl;
-    dump(skFile.data(), skFile.size());
     secureZeroize(skFile.data(), skFile.size());
   }
 
@@ -508,6 +506,8 @@ static bool signCertFile(
   parentKeysData.insert(parentKeysData.end(), metadata.currentKey, metadata.currentKey + 32);
   parentKeysData.insert(parentKeysData.end(), parentCertHashVec.begin(), parentCertHashVec.begin() + 32);
 
+  dump(parentKeysData.data(), parentKeysData.size(), L"Khối định danh cha (64 byte)");
+
   if (!File::Write(outPath, parentKeysData, inMetaOffset))
   {
     std::wcout << L"[-] Không thể ghi khóa cha vào tệp: " << outPath << std::endl;
@@ -521,6 +521,7 @@ static bool signCertFile(
     std::wcout << L"[-] Không thể băm tệp: " << outPath << std::endl;
     return false;
   }
+  dump(certHash.data(), certHash.size(), L"Mã băm chứng chỉ trước khi ký (32 byte)");
 
   // Đọc tệp khóa bí mật
   std::vector<uint8_t> secretKey;
@@ -539,6 +540,8 @@ static bool signCertFile(
       secretKey.data());
 
   secureZeroize(secretKey.data(), secretKey.size());
+
+  dump(signature.data(), signature.size(), L"Chữ ký Dilithium sinh ra (4627 byte)");
 
   if (!File::Append(outPath, signature))
   {
@@ -578,11 +581,14 @@ static bool signDefaultFile(
     std::wcout << L"[-] Không thể băm tệp chứng chỉ ký: " << pubKeyPath << std::endl;
     return false;
   }
+  dump(certHash.data(), certHash.size(), L"Mã băm chứng chỉ ký (32 byte)");
 
   // Khối siêu dữ liệu của tệp mặc định chứa ID khóa ký (32 byte) và Mã băm chứng chỉ (32 byte)
   std::vector<uint8_t> metaBytes;
   metaBytes.insert(metaBytes.end(), metadata.currentKey, metadata.currentKey + 32);
   metaBytes.insert(metaBytes.end(), certHash.begin(), certHash.begin() + 32);
+
+  dump(metaBytes.data(), metaBytes.size(), L"Khối siêu dữ liệu người ký (64 byte)");
 
   if (!File::Append(outPath, metaBytes))
   {
@@ -597,6 +603,7 @@ static bool signDefaultFile(
     std::wcout << L"[-] Không thể băm tệp: " << outPath << std::endl;
     return false;
   }
+  dump(fileHash.data(), fileHash.size(), L"Mã băm tệp trước khi ký (32 byte)");
 
   // Đọc khóa bí mật
   std::vector<uint8_t> secretKey;
@@ -615,6 +622,8 @@ static bool signDefaultFile(
       secretKey.data());
 
   secureZeroize(secretKey.data(), secretKey.size());
+
+  dump(signature.data(), signature.size(), L"Chữ ký Dilithium sinh ra (4627 byte)");
 
   // Nối chữ ký vào cuối tệp
   if (!File::Append(outPath, signature))
@@ -654,6 +663,15 @@ static bool signUSXFile(const std::wstring& secKeyPath,
     return false;
   }
 
+  if (bDumpFlag)
+  {
+    std::wcout << L"[*] Thông tin Tiêu đề USX (USXHeader):\n";
+    std::wcout << L"    Phiên bản USX : " << static_cast<int>(header.Version) << L"\n";
+    std::wcout << L"    Kiến trúc đích: 0x" << std::hex << header.TargetArch << std::dec << L"\n";
+    std::wcout << L"    Cờ điều khiển : 0x" << std::hex << header.Flags << std::dec << L"\n";
+    std::wcout << L"    Điểm vào RAM  : 0x" << std::hex << header.EntryPoint << std::dec << L"\n";
+  }
+
   // Sao chép nội dung tệp gốc
   if (!File::Copy(inPath, outPath))
   {
@@ -668,6 +686,7 @@ static bool signUSXFile(const std::wstring& secKeyPath,
     std::wcout << L"[-] Không thể băm tệp chứng chỉ ký: " << pubKeyPath << std::endl;
     return false;
   }
+  dump(certHash.data(), certHash.size(), L"Mã băm chứng chỉ ký (32 byte)");
 
   // Thay đổi cờ để đánh dấu rằng tệp này đã được ký
   header.Flags |= USX_HFLAG_SIGNED;
@@ -680,6 +699,15 @@ static bool signUSXFile(const std::wstring& secKeyPath,
   USXSecurity secTable     = USX::getSecurityTable(outPath);
   secTable.SignatureOffset = File::GetSize(outPath);
   secTable.SignatureSize   = DILITHIUM_BYTES;
+
+  if (bDumpFlag)
+  {
+    std::wcout << L"[*] Cập nhật Bảng bảo mật (USXSecurity):\n";
+    std::wcout << L"    SignatureOffset: 0x" << std::hex << secTable.SignatureOffset << L", Size: " << std::dec << secTable.SignatureSize << L"\n";
+    std::wcout << L"    KEMOffset      : 0x" << std::hex << secTable.KEMOffset << L", Size: " << std::dec << secTable.KEMSize << L"\n";
+    dump(reinterpret_cast<const uint8_t*>(&secTable), sizeof(USXSecurity), L"Bảng bảo mật thô (24 byte)");
+  }
+
   if (!USX::putSecurityTable(outPath, &secTable))
   {
     return false;
@@ -689,6 +717,8 @@ static bool signUSXFile(const std::wstring& secKeyPath,
   std::vector<uint8_t> metaBytes;
   metaBytes.insert(metaBytes.end(), metadata.currentKey, metadata.currentKey + 32);
   metaBytes.insert(metaBytes.end(), certHash.begin(), certHash.begin() + 32);
+
+  dump(metaBytes.data(), metaBytes.size(), L"Khối siêu dữ liệu người ký (64 byte)");
 
   if (!File::Append(outPath, metaBytes))
   {
@@ -703,6 +733,7 @@ static bool signUSXFile(const std::wstring& secKeyPath,
     std::wcout << L"[-] Không thể băm tệp: " << outPath << std::endl;
     return false;
   }
+  dump(fileHash.data(), fileHash.size(), L"Mã băm tệp trước khi ký (32 byte)");
 
   // Đọc khóa bí mật
   std::vector<uint8_t> secretKey;
@@ -721,6 +752,8 @@ static bool signUSXFile(const std::wstring& secKeyPath,
       secretKey.data());
 
   secureZeroize(secretKey.data(), secretKey.size());
+
+  dump(signature.data(), signature.size(), L"Chữ ký Dilithium sinh ra (4627 byte)");
 
   // Nối chữ ký vào cuối tệp
   if (!File::Append(outPath, signature))
@@ -841,6 +874,16 @@ bool Sign::readMetadata(const std::wstring& pubKeyPath)
   }
   std::wcout << std::endl;
 
+  if (bDumpFlag)
+  {
+    dump(metadata.currentKey, sizeof(metadata.currentKey), L"Mã khóa hiện tại (SKI)");
+    if (hasParent)
+    {
+      dump(metadata.parentKey, sizeof(metadata.parentKey), L"Mã khóa cha (AKI)");
+      dump(metadata.parentCertHash, sizeof(metadata.parentCertHash), L"Mã băm chứng chỉ cha");
+    }
+  }
+
   return true;
 }
 
@@ -882,6 +925,9 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
   std::vector<uint8_t> pubKeyFileHash;
   File::Hash(pubKeyPath, pubKeyFileHash);
 
+  dump(pubKeyHash, 32, L"Mã ID của chứng chỉ cung cấp (32 byte)");
+  dump(pubKeyFileHash.data(), pubKeyFileHash.size(), L"Mã băm của toàn bộ tệp chứng chỉ (32 byte)");
+
   // Mở tệp cần xác minh
 #if defined(_WIN32)
   std::ifstream inp(inPath, std::ios::in | std::ios::binary | std::ios::ate);
@@ -915,6 +961,8 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
   inp.seekg(fileSize - DILITHIUM_BYTES, std::ios::beg);
   inp.read(reinterpret_cast<char*>(signature.data()), DILITHIUM_BYTES);
 
+  dump(signature.data(), signature.size(), L"Chữ ký Dilithium trích xuất từ tệp (4627 byte)");
+
   if (!isCert)
   {
     std::wcout << L"[*] Phân loại tệp: Tệp Dữ Liệu Thông Thường" << std::endl;
@@ -924,6 +972,9 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
     inp.seekg(fileSize - DILITHIUM_BYTES - 64, std::ios::beg);
     inp.read(reinterpret_cast<char*>(keyID.data()), 32);
     inp.read(reinterpret_cast<char*>(certHash.data()), 32);
+
+    dump(keyID.data(), 32, L"Mã ID người ký ghi trong tệp");
+    dump(certHash.data(), 32, L"Mã băm chứng chỉ người ký ghi trong tệp");
 
     // Kiểm tra Mã ID có khớp với Chứng Chỉ truyền vào không
     if (memcmp(keyID.data(), pubKeyHash, 32) != 0)
@@ -958,6 +1009,7 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
 
       if (!isRoot)
       {
+        dump(inMeta.parentCertHash, 32, L"Mã băm chứng chỉ cha lưu trong chứng chỉ");
         if (memcmp(inMeta.parentCertHash, pubKeyFileHash.data(), 32) != 0)
         {
           std::wcout << L"[!] LỖI BẢO MẬT: Tệp chứng chỉ cha không khớp hoàn toàn với chứng chỉ đã dùng để cấp phép!" << std::endl;
@@ -995,6 +1047,8 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
   Crypto::Keccak::squeeze(fileHash.data(), fileHash.size(), &state);
 
   inp.close();
+
+  dump(fileHash.data(), fileHash.size(), L"Mã băm tệp tính toán lại (32 byte)");
 
   // Thực hiện xác thực bằng Dilithium
   if (!Dilithium::verify(signature.data(), signature.size(), fileHash.data(), fileHash.size(), pubKeyData.data()))
