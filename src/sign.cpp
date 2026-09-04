@@ -696,34 +696,54 @@ static bool signUSXFile(const std::wstring& secKeyPath,
   }
 
   // Đặt giá trị cho bảng Bảo mật
-  USXSecurity secTable     = USX::getSecurityTable(outPath);
-  secTable.SignatureOffset = File::GetSize(outPath);
-  secTable.SignatureSize   = DILITHIUM_BYTES;
-
-  if (bDumpFlag)
-  {
-    std::wcout << L"[*] Cập nhật Bảng bảo mật (USXSecurity):\n";
-    std::wcout << L"    SignatureOffset: 0x" << std::hex << secTable.SignatureOffset << L", Size: " << std::dec << secTable.SignatureSize << L"\n";
-    std::wcout << L"    KEMOffset      : 0x" << std::hex << secTable.KEMOffset << L", Size: " << std::dec << secTable.KEMSize << L"\n";
-    dump(reinterpret_cast<const uint8_t*>(&secTable), sizeof(USXSecurity), L"Bảng bảo mật thô (24 byte)");
-  }
-
-  if (!USX::putSecurityTable(outPath, &secTable))
-  {
-    return false;
-  }
+  USXSecurity secTable = USX::getSecurityTable(outPath);
+  bool        nullSig  = false;
 
   // Khối siêu dữ liệu của tệp mặc định chứa ID khóa ký (32 byte) và Mã băm chứng chỉ (32 byte)
   std::vector<uint8_t> metaBytes;
   metaBytes.insert(metaBytes.end(), metadata.currentKey, metadata.currentKey + 32);
   metaBytes.insert(metaBytes.end(), certHash.begin(), certHash.begin() + 32);
 
+  if (!secTable.SignatureOffset && !secTable.SignatureSize)
+  {
+    secTable.SignatureOffset = File::GetSize(outPath);
+    secTable.SignatureSize   = DILITHIUM_BYTES + metaBytes.size();
+    nullSig                  = true;
+
+    if (bDumpFlag)
+    {
+      std::wcout << L"[*] Cập nhật Bảng bảo mật (USXSecurity):\n";
+      std::wcout << L"    SignatureOffset: 0x" << std::hex << secTable.SignatureOffset << L", Size: " << std::dec << secTable.SignatureSize << L"\n";
+      std::wcout << L"    KEMOffset      : 0x" << std::hex << secTable.KEMOffset << L", Size: " << std::dec << secTable.KEMSize << L"\n";
+      dump(reinterpret_cast<const uint8_t*>(&secTable), sizeof(USXSecurity), L"Bảng bảo mật thô (24 byte)");
+    }
+
+    if (!USX::putSecurityTable(outPath, &secTable))
+    {
+      return false;
+    }
+  }
+
   dump(metaBytes.data(), metaBytes.size(), L"Khối siêu dữ liệu người ký (64 byte)");
 
-  if (!File::Append(outPath, metaBytes))
+  if (nullSig)
   {
-    std::wcout << L"[-] Không thể ghi siêu dữ liệu vào tệp: " << outPath << std::endl;
-    return false;
+    File::Content zeroSigPayload;
+    zeroSigPayload.insert(zeroSigPayload.end(), metaBytes.begin(), metaBytes.end());
+    zeroSigPayload.insert(zeroSigPayload.end(), DILITHIUM_BYTES, 0);
+
+    if (!File::Append(outPath, zeroSigPayload))
+    {
+      std::wcout << L"[-] Không thể ghi siêu dữ liệu vào tệp: " << outPath << std::endl;
+      return false;
+    }
+  } else
+  {
+    if (!File::Write(outPath, metaBytes, secTable.SignatureOffset))
+    {
+      std::wcout << L"[-] Không thể ghi đè siêu dữ liệu vào tệp: " << outPath << std::endl;
+      return false;
+    }
   }
 
   // Băm tệp sau khi chỉnh sửa
@@ -755,10 +775,9 @@ static bool signUSXFile(const std::wstring& secKeyPath,
 
   dump(signature.data(), signature.size(), L"Chữ ký Dilithium sinh ra (4627 byte)");
 
-  // Nối chữ ký vào cuối tệp
-  if (!File::Append(outPath, signature))
+  if (!File::Write(outPath, signature, secTable.SignatureOffset + metaBytes.size()))
   {
-    std::wcout << L"[-] Không thể thêm chữ ký vào tệp: " << outPath << std::endl;
+    std::wcout << L"[-] Không thể ghi đè chữ ký vào tệp: " << outPath << std::endl;
     return false;
   }
 
@@ -956,15 +975,101 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
 
   bool isCert = ((magic & ~(uint64_t)0xff) == 0x564e455051000000);
 
-  // Đọc chữ ký ở cuối tệp
+  USXHeader header;
+  bool      isUSX = USX::verifyHeader(inPath, &header);
+
   std::vector<uint8_t> signature(DILITHIUM_BYTES);
-  inp.seekg(fileSize - DILITHIUM_BYTES, std::ios::beg);
-  inp.read(reinterpret_cast<char*>(signature.data()), DILITHIUM_BYTES);
+  USXSecurity          secTable = {};
 
-  dump(signature.data(), signature.size(), L"Chữ ký Dilithium trích xuất từ tệp (4627 byte)");
-
-  if (!isCert)
+  if (isCert)
   {
+    inp.seekg(fileSize - DILITHIUM_BYTES, std::ios::beg);
+    inp.read(reinterpret_cast<char*>(signature.data()), DILITHIUM_BYTES);
+
+    std::wcout << L"[*] Phân loại tệp: Chứng Chỉ (Certificate)" << std::endl;
+    SignerMeta inMeta;
+    if (readCertMetadata(inPath, inMeta) != 0)
+    {
+      bool isRoot = true;
+      for (int i = 0; i < 32; ++i)
+      {
+        if (inMeta.parentKey[i] != 0) isRoot = false;
+      }
+
+      if (!isRoot)
+      {
+        dump(inMeta.parentCertHash, 32, L"Mã băm chứng chỉ cha lưu trong chứng chỉ");
+        if (memcmp(inMeta.parentCertHash, pubKeyFileHash.data(), 32) != 0)
+        {
+          std::wcout << L"[!] LỖI BẢO MẬT: Tệp chứng chỉ cha không khớp hoàn toàn với chứng chỉ đã dùng để cấp phép!" << std::endl;
+          std::wcout << L"[-] Từ chối xác thực để ngăn chặn tấn công hạ cấp chứng chỉ." << std::endl;
+          return false;
+        }
+      }
+    }
+  } else if (isUSX)
+  {
+    std::wcout << L"[*] Phân loại tệp: Tệp Thực Thi Bảo Mật Đa Kiến Trúc (USX)" << std::endl;
+
+    if (!(header.Flags & USX_HFLAG_SIGNED))
+    {
+      std::wcout << L"[-] Tệp USX chưa được ký!" << std::endl;
+      return false;
+    }
+
+    secTable = USX::getSecurityTable(inPath);
+
+    if (bDumpFlag)
+    {
+      std::wcout << L"[*] Thông tin Tiêu đề USX (USXHeader):\n";
+      std::wcout << L"    Phiên bản USX : " << static_cast<int>(header.Version) << L"\n";
+      std::wcout << L"    Kiến trúc đích: 0x" << std::hex << header.TargetArch << std::dec << L"\n";
+      std::wcout << L"    Cờ điều khiển : 0x" << std::hex << header.Flags << std::dec << L"\n";
+      std::wcout << L"    Điểm vào RAM  : 0x" << std::hex << header.EntryPoint << std::dec << L"\n";
+      std::wcout << L"[*] Bảng bảo mật USX (USXSecurity):\n";
+      std::wcout << L"    SignatureOffset: 0x" << std::hex << secTable.SignatureOffset << L", Size: " << std::dec << secTable.SignatureSize << L" byte\n";
+      std::wcout << L"    KEMOffset      : 0x" << std::hex << secTable.KEMOffset << L", Size: " << std::dec << secTable.KEMSize << L" byte\n";
+      dump(reinterpret_cast<const uint8_t*>(&secTable), sizeof(USXSecurity), L"Bảng bảo mật thô (24 byte)");
+    }
+
+    // Đọc 64 byte (32 byte Mã ID + 32 byte Mã băm chứng chỉ) tại vị trí SignatureOffset
+    std::vector<uint8_t> keyID(32);
+    std::vector<uint8_t> certHash(32);
+    inp.seekg(secTable.SignatureOffset, std::ios::beg);
+    inp.read(reinterpret_cast<char*>(keyID.data()), 32);
+    inp.read(reinterpret_cast<char*>(certHash.data()), 32);
+
+    dump(keyID.data(), 32, L"Mã ID người ký ghi trong USX");
+    dump(certHash.data(), 32, L"Mã băm chứng chỉ người ký ghi trong USX");
+
+    // Đọc chữ ký tại vị trí secTable.SignatureOffset + 64
+    inp.seekg(secTable.SignatureOffset + 64, std::ios::beg);
+    inp.read(reinterpret_cast<char*>(signature.data()), DILITHIUM_BYTES);
+
+    // Kiểm tra Mã ID có khớp với Chứng Chỉ truyền vào không
+    if (memcmp(keyID.data(), pubKeyHash, 32) != 0)
+    {
+      std::wcout << L"[!] CẢNH BÁO: Tệp USX này được ký bởi một chứng chỉ khác! (Mã ID không khớp)." << std::endl;
+      std::wcout << L"    Mã ID trên tệp USX: ";
+      dump(keyID.data(), 32);
+      std::wcout << L"    Mã ID của chứng chỉ cung cấp: ";
+      dump(pubKeyHash, 32);
+      std::wcout << L"[-] Từ chối xác thực. Vui lòng cung cấp đúng tệp chứng chỉ." << std::endl;
+      return false;
+    }
+
+    // Kiểm tra mã băm chứng chỉ chống hạ cấp
+    if (memcmp(certHash.data(), pubKeyFileHash.data(), 32) != 0)
+    {
+      std::wcout << L"[!] LỖI BẢO MẬT: Tệp chứng chỉ không khớp hoàn toàn với chứng chỉ dùng để ký tệp USX!" << std::endl;
+      std::wcout << L"[-] Từ chối xác thực để ngăn chặn tấn công hạ cấp chứng chỉ." << std::endl;
+      return false;
+    }
+  } else
+  {
+    inp.seekg(fileSize - DILITHIUM_BYTES, std::ios::beg);
+    inp.read(reinterpret_cast<char*>(signature.data()), DILITHIUM_BYTES);
+
     std::wcout << L"[*] Phân loại tệp: Tệp Dữ Liệu Thông Thường" << std::endl;
     // Đọc 64 byte (32 byte Mã ID + 32 byte Mã băm chứng chỉ) ngay trước chữ ký
     std::vector<uint8_t> keyID(32);
@@ -995,51 +1100,64 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
       std::wcout << L"[-] Từ chối xác thực để ngăn chặn tấn công hạ cấp chứng chỉ." << std::endl;
       return false;
     }
-  } else
-  {
-    std::wcout << L"[*] Phân loại tệp: Chứng Chỉ (Certificate)" << std::endl;
-    SignerMeta inMeta;
-    if (readCertMetadata(inPath, inMeta) != 0)
-    {
-      bool isRoot = true;
-      for (int i = 0; i < 32; ++i)
-      {
-        if (inMeta.parentKey[i] != 0) isRoot = false;
-      }
-
-      if (!isRoot)
-      {
-        dump(inMeta.parentCertHash, 32, L"Mã băm chứng chỉ cha lưu trong chứng chỉ");
-        if (memcmp(inMeta.parentCertHash, pubKeyFileHash.data(), 32) != 0)
-        {
-          std::wcout << L"[!] LỖI BẢO MẬT: Tệp chứng chỉ cha không khớp hoàn toàn với chứng chỉ đã dùng để cấp phép!" << std::endl;
-          std::wcout << L"[-] Từ chối xác thực để ngăn chặn tấn công hạ cấp chứng chỉ." << std::endl;
-          return false;
-        }
-      }
-    }
   }
 
-  // Băm nội dung tệp (trừ phần chữ ký ở cuối)
-  uint64_t signedDataSize = fileSize - DILITHIUM_BYTES;
-  inp.seekg(0, std::ios::beg);
+  dump(signature.data(), signature.size(), L"Chữ ký Dilithium trích xuất từ tệp (4627 byte)");
 
+  // Băm nội dung tệp để kiểm tra chữ ký
   Crypto::Keccak::State state;
   Crypto::Keccak::init(&state, 136);
 
   const size_t         BUFFER_SIZE = 64 * 1024;
   std::vector<uint8_t> buffer(BUFFER_SIZE);
 
-  uint64_t remaining = signedDataSize;
-  while (remaining > 0)
+  if (isUSX)
   {
-    std::streamsize toRead = (remaining > static_cast<uint64_t>(BUFFER_SIZE)) ? BUFFER_SIZE : remaining;
-    inp.read(reinterpret_cast<char*>(buffer.data()), toRead);
-    std::streamsize bytesRead = inp.gcount();
-    if (bytesRead == 0) break;
+    // Với tệp USX: Băm toàn bộ tệp, trong đó vùng chữ ký [sigOffset, sigOffset + DILITHIUM_BYTES] được thay bằng các byte 0
+    uint64_t sigOffset = secTable.SignatureOffset + 64;
+    uint64_t sigLength = DILITHIUM_BYTES;
 
-    Crypto::Keccak::absorb(&state, buffer.data(), bytesRead);
-    remaining -= bytesRead;
+    inp.seekg(0, std::ios::beg);
+    uint64_t currentPos = 0;
+    uint64_t totalSize  = fileSize;
+
+    while (currentPos < totalSize)
+    {
+      uint64_t toRead = (totalSize - currentPos > BUFFER_SIZE) ? BUFFER_SIZE : (totalSize - currentPos);
+      inp.read(reinterpret_cast<char*>(buffer.data()), toRead);
+      std::streamsize bytesRead = inp.gcount();
+      if (bytesRead <= 0) break;
+
+      uint64_t chunkStart = currentPos;
+      uint64_t chunkEnd   = currentPos + bytesRead;
+
+      if (chunkEnd > sigOffset && chunkStart < sigOffset + sigLength)
+      {
+        uint64_t zeroStartInChunk = (sigOffset > chunkStart) ? (sigOffset - chunkStart) : 0;
+        uint64_t zeroEndInChunk   = (sigOffset + sigLength < chunkEnd) ? (sigOffset + sigLength - chunkStart) : bytesRead;
+        memset(buffer.data() + zeroStartInChunk, 0, zeroEndInChunk - zeroStartInChunk);
+      }
+
+      Crypto::Keccak::absorb(&state, buffer.data(), bytesRead);
+      currentPos += bytesRead;
+    }
+  } else
+  {
+    // Với Tệp thường / Chứng chỉ: Băm từ 0 đến fileSize - DILITHIUM_BYTES
+    uint64_t signedDataSize = fileSize - DILITHIUM_BYTES;
+    inp.seekg(0, std::ios::beg);
+
+    uint64_t remaining = signedDataSize;
+    while (remaining > 0)
+    {
+      std::streamsize toRead = (remaining > static_cast<uint64_t>(BUFFER_SIZE)) ? BUFFER_SIZE : remaining;
+      inp.read(reinterpret_cast<char*>(buffer.data()), toRead);
+      std::streamsize bytesRead = inp.gcount();
+      if (bytesRead == 0) break;
+
+      Crypto::Keccak::absorb(&state, buffer.data(), bytesRead);
+      remaining -= bytesRead;
+    }
   }
 
   std::vector<uint8_t> fileHash(32);

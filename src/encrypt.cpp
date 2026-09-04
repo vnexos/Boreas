@@ -181,7 +181,7 @@ static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, 
   // Thay đổi bảng bảo mật
   USXSecurity secTable;
   secTable.SignatureOffset = size;
-  secTable.SignatureSize   = DILITHIUM_BYTES;
+  secTable.SignatureSize   = DILITHIUM_BYTES + 64;
   secTable.KEMOffset       = secTable.SignatureOffset + ((secTable.SignatureSize + 7) & ~(uint64_t)7);
   secTable.KEMSize         = KYBER_INDCCA_CIPHERTEXTBYTES;
 
@@ -197,8 +197,7 @@ static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, 
     return false;
 
   // Thêm một vùng rỗng để chứa chữ ký
-  File::Content zeroDilithium(secTable.KEMOffset - secTable.SignatureOffset);
-  secureZeroize(zeroDilithium.data(), zeroDilithium.size());
+  File::Content zeroDilithium(secTable.KEMOffset - secTable.SignatureOffset, 0);
   if (!File::Append(outPath, zeroDilithium))
   {
     std::wcout << L"[-] Không thể ghi tệp: " << outPath << std::endl;
