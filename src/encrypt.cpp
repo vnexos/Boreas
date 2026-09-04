@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -62,7 +63,7 @@ bool Encrypt::generateKey(const std::wstring& secKeyPath, const std::wstring& pu
   return true;
 }
 
-bool Encrypt::encryptFile(const std::wstring& pubKeyPath, const std::wstring& inPath, const std::wstring& outPath)
+static bool encryptDefaultFileWithKEM(const std::wstring& pubKeyPath, const std::wstring& inPath, const std::wstring& outPath)
 {
   // Đọc tệp chứa khóa công khai
   File::Content publicKey;
@@ -130,200 +131,7 @@ bool Encrypt::encryptFile(const std::wstring& pubKeyPath, const std::wstring& in
   return true;
 }
 
-bool Encrypt::decryptFile(const std::wstring& secKeyPath, const std::wstring& inPath, const std::wstring& outPath)
-{
-  // Đọc tệp chứa khóa bí mật
-  File::Content secretKey;
-  if (!File::Read(secKeyPath, secretKey))
-    return false;
-
-  if (secretKey.size() != KYBER_INDCCA_SECKEYBYTES)
-  {
-    wprintf(L"[-] Khóa bí mật không hợp lệ! (mong đợi %d byte nhưng có %zu byte)\n", KYBER_INDCCA_SECKEYBYTES, secretKey.size());
-    secureZeroize(secretKey.data(), secretKey.size());
-    return false;
-  }
-
-  // Đọc tệp chứa dữ liệu đã mã hóa
-  File::Content encryptedData;
-  if (!File::Read(inPath, encryptedData))
-  {
-    secureZeroize(secretKey.data(), secretKey.size());
-    return false;
-  }
-
-  size_t headerSize = KYBER_INDCCA_CIPHERTEXTBYTES + AES256_BLOCKLEN;
-  if (encryptedData.size() < headerSize)
-  {
-    wprintf(L"[-] Tệp mã hóa quá nhỏ! (tối thiểu %zu byte nhưng có %zu byte)\n", headerSize, encryptedData.size());
-    secureZeroize(secretKey.data(), secretKey.size());
-    return false;
-  }
-
-  std::wcout << L"[+] Đang giải mã " << inPath << " (" << encryptedData.size() << " byte)...\n";
-
-  // Giải nén các thành phần của tệp mã hóa
-  const uint8_t* ct     = encryptedData.data();
-  const uint8_t* iv     = encryptedData.data() + KYBER_INDCCA_CIPHERTEXTBYTES;
-  const uint8_t* aes    = encryptedData.data() + headerSize;
-  size_t         aesLen = encryptedData.size() - headerSize;
-
-  dump(ct, KYBER_INDCCA_CIPHERTEXTBYTES, L"Bản mã Kyber trích xuất");
-  dump(iv, AES256_BLOCKLEN, L"Mảng khởi tạo (IV) trích xuất");
-
-  // Mở gói khóa Kyber
-  uint8_t ss[KYBER_SSBYTES];
-  Kyber::decapsulate(ss, ct, secretKey.data());
-
-  // Xóa sạch khóa bí mật sau khi decapsulate xong
-  secureZeroize(secretKey.data(), secretKey.size());
-
-  // Giải mã AES-256-CTR
-  Crypto::AES256::AES256Context context;
-  Crypto::AES256::init(&context, ss);
-
-  File::Content data(aesLen);
-  if (aesLen > 0)
-    Crypto::AES256::counter(&context, iv, data.data(), aes, aesLen);
-
-  // Xóa sạch dữ liệu khóa AES
-  secureZeroize(&context, sizeof(context));
-  secureZeroize(ss, sizeof(ss));
-
-  dump(data.data(), data.size(), L"Dữ liệu sau khi giải mã");
-
-  // Lưu lại dữ liệu giải mã
-  if (!File::Write(outPath, data))
-    return false;
-
-  std::wcout << L"[+] Đã lưu dữ liệu giải mã vào: " << outPath << " (" << data.size() << " byte)\n";
-
-  return true;
-}
-
-static std::vector<uint8_t> getKey(const std::wstring& key)
-{
-  std::string          charKey = Converter::WStringToUtf8(key);
-  std::vector<uint8_t> result;
-
-  if (charKey.length() & 1)
-    return result;
-
-  size_t length = charKey.length();
-  result.reserve(length / 2);
-  uint8_t elem = 0;
-  for (uint64_t i = 0; i < length; i++)
-  {
-    elem   <<= 4;
-    char c   = charKey[i];
-    if (c >= '0' && c <= '9')
-      elem |= c - '0';
-    else if (c >= 'a' && c <= 'f')
-      elem |= c - 87;
-    else if (c >= 'A' && c <= 'F')
-      elem |= c - 55;
-    else
-      return {};
-
-    if (i & 1)
-    {
-      result.push_back(elem);
-      elem = 0;
-    }
-  }
-
-  return result;
-}
-
-static bool encryptDefaultFile(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key)
-{
-  std::vector<uint8_t> byteKey     = getKey(key);
-  std::vector<uint8_t> magicNumber = {0, 0, 0, 'S', 'E', 'A', 'N', 'V'};
-
-  if (byteKey.size() != 32)
-  {
-    std::wcout << L"[-] Mã khóa không hợp lệ: " << byteKey.size() << " byte (mong đợi: 32 byte)" << std::endl;
-    return false;
-  }
-
-  std::vector<uint8_t> result;
-  if (!File::Read(inPath, result))
-  {
-    std::wcout << L"[-] Không thể đọc tệp: " << inPath << std::endl;
-    return false;
-  }
-
-  uint64_t i;
-  for (i = 0; i < 8; ++i)
-  {
-    if (result[result.size() - 8 + i] != magicNumber[i])
-      break;
-  }
-
-  if (i != 8)
-  {
-    Crypto::AES256::AES256Context context;
-    Crypto::AES256::init(&context, byteKey.data());
-
-    uint8_t iv[AES256_BLOCKLEN];
-
-    Crypto::randombytes(iv, sizeof(iv));
-    dump(iv, sizeof(iv), L"Mảng khởi tạo (IV)");
-
-    Crypto::AES256::counter(&context, iv, result.data(), result.data(), result.size());
-
-    result.insert(result.end(), iv, iv + sizeof(iv));
-    result.insert(result.end(), magicNumber.begin(), magicNumber.end());
-
-    dump(result.data(), result.size(), L"Toàn bộ gói dữ liệu đã mã hóa");
-
-    secureZeroize(&context, sizeof(context));
-    secureZeroize(byteKey.data(), byteKey.size());
-
-    if (!File::Write(outPath, result))
-    {
-      std::wcout << L"[-] Không thể ghi tệp: " << outPath << std::endl;
-      return false;
-    }
-
-    std::wcout << L"[+] Mã hóa thành công vào tệp: " << outPath << std::endl;
-  } else
-  {
-    Crypto::AES256::AES256Context context;
-    Crypto::AES256::init(&context, byteKey.data());
-
-    uint8_t iv[AES256_BLOCKLEN];
-
-    for (uint64_t j = 0; j < AES256_BLOCKLEN; ++j)
-    {
-      iv[j] = result[result.size() - 24 + j];
-    }
-    dump(iv, sizeof(iv), L"Mảng khởi tạo (IV) trích xuất");
-
-    result.resize(result.size() - 24);
-    Crypto::AES256::counter(&context, iv, result.data(), result.data(), result.size());
-
-    dump(result.data(), result.size(), L"Dữ liệu sau khi giải mã");
-
-    secureZeroize(&context, sizeof(context));
-    secureZeroize(byteKey.data(), byteKey.size());
-    secureZeroize(iv, sizeof(iv));
-
-    if (!File::Write(outPath, result))
-    {
-      std::wcout << L"[-] Không thể ghi tệp: " << outPath << std::endl;
-      return false;
-    }
-
-    secureZeroize(result.data(), result.size());
-
-    std::wcout << L"[+] Giải mã thành công vào tệp: " << outPath << std::endl;
-  }
-
-  return true;
-}
-
-static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key, USXHeader* header)
+static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, std::vector<uint8_t>& aesKey, USXHeader* header)
 {
   // Kiểm tra các điều kiện để Mã hóa
   if (header->Flags & USX_HFLAG_ENCRYPTED)
@@ -338,10 +146,9 @@ static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, 
   }
 
   // Lấy giá trị của khóa
-  std::vector<uint8_t> aesKey = getKey(key);
   if (aesKey.size() != 32)
   {
-    std::wcout << L"[-] Kích thước khóa AES không hợp lệ: " << key << std::endl;
+    std::wcout << L"[-] Kích thước khóa AES không hợp lệ!" << std::endl;
     return false;
   }
 
@@ -469,15 +276,308 @@ static bool encryptUSX(const std::wstring& inPath, const std::wstring& outPath, 
   secureZeroize(&ctx, sizeof(ctx));
   secureZeroize(aesKey.data(), aesKey.size());
 
-  std::wcout << L"[+] Mã hóa USX thành công vào tệp: " << outPath << std::endl;
+  return true;
+}
+
+static bool encryptUSXFileWithKEM(const std::wstring& pubKeyPath, const std::wstring& inPath, const std::wstring& outPath, USXHeader* header)
+{
+  // Đọc tệp khóa công khai
+  File::Content pubKey;
+  if (!File::Read(pubKeyPath, pubKey))
+  {
+    std::wcout << L"[-] Không thể đọc tệp khóa công khai: " << pubKeyPath << std::endl;
+    return false;
+  }
+
+  // Tạo khóa công khai
+  std::vector<uint8_t> ss(KYBER_SSBYTES);
+  std::vector<uint8_t> ct(KYBER_INDCCA_CIPHERTEXTBYTES);
+  Kyber::encapsulate(ct.data(), ss.data(), pubKey.data());
+
+  // Mã hóa tệp USX
+  if (!encryptUSX(inPath, outPath, ss, header))
+  {
+    secureZeroize(ss.data(), ss.size());
+    return false;
+  }
+
+  if (!File::Append(outPath, ct))
+  {
+    std::wcout << L"[-] Không thể thêm gói khóa vào tệp USX: " << outPath << std::endl;
+    return false;
+  }
+
+  std::wcout << L"[+] Đã mã hóa thành công vào tệp USX: " << outPath << std::endl;
 
   return true;
 }
 
-bool Encrypt::aesEncrypt(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key)
+bool Encrypt::encryptFile(const std::wstring& pubKeyPath, const std::wstring& inPath, const std::wstring& outPath)
 {
   USXHeader header;
   if (USX::verifyHeader(inPath, &header))
-    return encryptUSX(inPath, outPath, key, &header);
-  return encryptDefaultFile(inPath, outPath, key);
+    return encryptUSXFileWithKEM(pubKeyPath, inPath, outPath, &header);
+  return encryptDefaultFileWithKEM(pubKeyPath, inPath, outPath);
+}
+
+static bool decryptDefaultFileWithKEM(const std::wstring& secKeyPath, const std::wstring& inPath, const std::wstring& outPath)
+{
+  // Đọc tệp chứa khóa bí mật
+  File::Content secretKey;
+  if (!File::Read(secKeyPath, secretKey))
+    return false;
+
+  if (secretKey.size() != KYBER_INDCCA_SECKEYBYTES)
+  {
+    wprintf(L"[-] Khóa bí mật không hợp lệ! (mong đợi %d byte nhưng có %zu byte)\n", KYBER_INDCCA_SECKEYBYTES, secretKey.size());
+    secureZeroize(secretKey.data(), secretKey.size());
+    return false;
+  }
+
+  // Đọc tệp chứa dữ liệu đã mã hóa
+  File::Content encryptedData;
+  if (!File::Read(inPath, encryptedData))
+  {
+    secureZeroize(secretKey.data(), secretKey.size());
+    return false;
+  }
+
+  size_t headerSize = KYBER_INDCCA_CIPHERTEXTBYTES + AES256_BLOCKLEN;
+  if (encryptedData.size() < headerSize)
+  {
+    wprintf(L"[-] Tệp mã hóa quá nhỏ! (tối thiểu %zu byte nhưng có %zu byte)\n", headerSize, encryptedData.size());
+    secureZeroize(secretKey.data(), secretKey.size());
+    return false;
+  }
+
+  std::wcout << L"[+] Đang giải mã " << inPath << " (" << encryptedData.size() << " byte)...\n";
+
+  // Giải nén các thành phần của tệp mã hóa
+  const uint8_t* ct     = encryptedData.data();
+  const uint8_t* iv     = encryptedData.data() + KYBER_INDCCA_CIPHERTEXTBYTES;
+  const uint8_t* aes    = encryptedData.data() + headerSize;
+  size_t         aesLen = encryptedData.size() - headerSize;
+
+  dump(ct, KYBER_INDCCA_CIPHERTEXTBYTES, L"Bản mã Kyber trích xuất");
+  dump(iv, AES256_BLOCKLEN, L"Mảng khởi tạo (IV) trích xuất");
+
+  // Mở gói khóa Kyber
+  uint8_t ss[KYBER_SSBYTES];
+  Kyber::decapsulate(ss, ct, secretKey.data());
+
+  // Xóa sạch khóa bí mật sau khi decapsulate xong
+  secureZeroize(secretKey.data(), secretKey.size());
+
+  // Giải mã AES-256-CTR
+  Crypto::AES256::AES256Context context;
+  Crypto::AES256::init(&context, ss);
+
+  File::Content data(aesLen);
+  if (aesLen > 0)
+    Crypto::AES256::counter(&context, iv, data.data(), aes, aesLen);
+
+  // Xóa sạch dữ liệu khóa AES
+  secureZeroize(&context, sizeof(context));
+  secureZeroize(ss, sizeof(ss));
+
+  dump(data.data(), data.size(), L"Dữ liệu sau khi giải mã");
+
+  // Lưu lại dữ liệu giải mã
+  if (!File::Write(outPath, data))
+    return false;
+
+  std::wcout << L"[+] Đã lưu dữ liệu giải mã vào: " << outPath << " (" << data.size() << " byte)\n";
+
+  return true;
+}
+
+bool Encrypt::decryptFile(const std::wstring& secKeyPath, const std::wstring& inPath, const std::wstring& outPath)
+{
+  return decryptDefaultFileWithKEM(secKeyPath, inPath, outPath);
+}
+
+static std::vector<uint8_t> getKey(const std::wstring& key)
+{
+  std::string          charKey = Converter::WStringToUtf8(key);
+  std::vector<uint8_t> result;
+
+  if (charKey.length() & 1)
+    return result;
+
+  size_t length = charKey.length();
+  result.reserve(length / 2);
+  uint8_t elem = 0;
+  for (uint64_t i = 0; i < length; i++)
+  {
+    elem   <<= 4;
+    char c   = charKey[i];
+    if (c >= '0' && c <= '9')
+      elem |= c - '0';
+    else if (c >= 'a' && c <= 'f')
+      elem |= c - 87;
+    else if (c >= 'A' && c <= 'F')
+      elem |= c - 55;
+    else
+      return {};
+
+    if (i & 1)
+    {
+      result.push_back(elem);
+      elem = 0;
+    }
+  }
+
+  return result;
+}
+
+bool Encrypt::aesEncrypt(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key)
+{
+  std::vector<uint8_t> byteKey     = getKey(key);
+  std::vector<uint8_t> magicNumber = {0, 0, 0, 'S', 'E', 'A', 'N', 'V'};
+
+  if (byteKey.size() != 32)
+  {
+    std::wcout << L"[-] Mã khóa không hợp lệ: " << byteKey.size() << " byte (mong đợi: 32 byte)" << std::endl;
+    return false;
+  }
+
+  std::vector<uint8_t> result;
+  if (!File::Read(inPath, result))
+  {
+    std::wcout << L"[-] Không thể đọc tệp: " << inPath << std::endl;
+    return false;
+  }
+
+  uint64_t i;
+  for (i = 0; i < 8; ++i)
+  {
+    if (result[result.size() - 8 + i] != magicNumber[i])
+      break;
+  }
+
+  if (i != 8)
+  {
+    Crypto::AES256::AES256Context context;
+    Crypto::AES256::init(&context, byteKey.data());
+
+    uint8_t iv[AES256_BLOCKLEN];
+
+    Crypto::randombytes(iv, sizeof(iv));
+    dump(iv, sizeof(iv), L"Mảng khởi tạo (IV)");
+
+    Crypto::AES256::counter(&context, iv, result.data(), result.data(), result.size());
+
+    result.insert(result.end(), iv, iv + sizeof(iv));
+    result.insert(result.end(), magicNumber.begin(), magicNumber.end());
+
+    dump(result.data(), result.size(), L"Toàn bộ gói dữ liệu đã mã hóa");
+
+    secureZeroize(&context, sizeof(context));
+    secureZeroize(byteKey.data(), byteKey.size());
+
+    if (!File::Write(outPath, result))
+    {
+      std::wcout << L"[-] Không thể ghi tệp: " << outPath << std::endl;
+      return false;
+    }
+
+    std::wcout << L"[+] Mã hóa thành công vào tệp: " << outPath << std::endl;
+  } else
+  {
+    Crypto::AES256::AES256Context context;
+    Crypto::AES256::init(&context, byteKey.data());
+
+    uint8_t iv[AES256_BLOCKLEN];
+
+    for (uint64_t j = 0; j < AES256_BLOCKLEN; ++j)
+    {
+      iv[j] = result[result.size() - 24 + j];
+    }
+    dump(iv, sizeof(iv), L"Mảng khởi tạo (IV) trích xuất");
+
+    result.resize(result.size() - 24);
+    Crypto::AES256::counter(&context, iv, result.data(), result.data(), result.size());
+
+    dump(result.data(), result.size(), L"Dữ liệu sau khi giải mã");
+
+    secureZeroize(&context, sizeof(context));
+    secureZeroize(byteKey.data(), byteKey.size());
+    secureZeroize(iv, sizeof(iv));
+
+    if (!File::Write(outPath, result))
+    {
+      std::wcout << L"[-] Không thể ghi tệp: " << outPath << std::endl;
+      return false;
+    }
+
+    secureZeroize(result.data(), result.size());
+
+    std::wcout << L"[+] Giải mã thành công vào tệp: " << outPath << std::endl;
+  }
+
+  return true;
+}
+
+bool Encrypt::encapsulateKey(const std::wstring& pubPath, const std::wstring& outPath)
+{
+  // Đọc khóa công khai
+  File::Content pubData;
+  if (!File::Read(pubPath, pubData))
+  {
+    std::wcout << L"Có lỗi xảy ra trong quá trình đọc tệp khóa công khai: " << pubPath << std::endl;
+    return false;
+  }
+
+  // Đóng gói khóa
+  std::vector<uint8_t> ciphertext(KYBER_INDCCA_CIPHERTEXTBYTES);
+  std::vector<uint8_t> key(KYBER_SSBYTES);
+  Kyber::encapsulate(ciphertext.data(), key.data(), pubData.data());
+
+  for (uint64_t i = 0; i < key.size(); ++i)
+    std::wcout << std::hex << std::setfill(L'0') << std::setw(2) << static_cast<int>(key[i]);
+  std::wcout << std::dec << std::endl;
+
+  secureZeroize(key.data(), key.size());
+  secureZeroize(pubData.data(), pubData.size());
+
+  if (!File::Write(outPath, ciphertext))
+  {
+    std::wcout << L"Có lỗi xảy ra trong quá trình ghi vào tệp: " << outPath << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+bool Encrypt::decapsulateKey(const std::wstring& secPath, const std::wstring& kemPath)
+{
+  // Đọc khóa công khai
+  File::Content secData;
+  if (!File::Read(secPath, secData))
+  {
+    std::wcout << L"Có lỗi xảy ra trong quá trình đọc tệp khóa bí mật: " << secPath << std::endl;
+    return false;
+  }
+
+  // Đọc gói khóa
+  File::Content kemData;
+  if (!File::Read(kemPath, kemData))
+  {
+    std::wcout << L"Có lỗi xảy ra trong quá trình đọc tệp gói khóa: " << secPath << std::endl;
+    return false;
+  }
+
+  // Mở gói khóa
+  std::vector<uint8_t> key(KYBER_SSBYTES);
+  Kyber::decapsulate(key.data(), kemData.data(), secData.data());
+
+  secureZeroize(secData.data(), secData.size());
+
+  for (uint64_t i = 0; i < key.size(); ++i)
+    std::wcout << std::hex << std::setfill(L'0') << std::setw(2) << static_cast<int>(key[i]);
+  std::wcout << std::dec << std::endl;
+
+  secureZeroize(key.data(), key.size());
+
+  return true;
 }

@@ -36,13 +36,14 @@ void printUsage(const char* prog)
   wprintf(L"Sử dụng:\n");
   wprintf(L"[*] Mã hóa bất đối xứng: %s -encrypt\n", prog);
   wprintf(L"    -g <tệp khóa bí mật> <tệp khóa công khai>   : Sinh ra cặp khóa Kyber.\n");
-  wprintf(L"    -e <tệp khóa công khai> <tệp vào> <tệp ra>  : Mã hóa tệp bằng khóa công khai\n");
-  wprintf(L"                                                  Kyber kết hợp AES-256.\n");
+  wprintf(L"    -e <tệp khóa công khai> <tệp vào> <tệp ra>  : Mã hóa tệp hoặc tệp USX bằng\n");
+  wprintf(L"                                                  khóa công khai Kyber kết hợp\n");
+  wprintf(L"                                                  AES-256.\n");
   wprintf(L"    -d <tệp khóa bí mật> <tệp vào> <tệp ra>     : Giải mã tệp bằng khóa bí mật\n");
-  wprintf(L"                                                  Kyber kết hợp AES-256.\n");
-  wprintf(L"    -kem <tệp khóa công khai> <khóa 32 byte>\n");
-  wprintf(L"         <tệp ra>                               : Đóng gói khóa 32 Byte.\n");
-  wprintf(L"    -kdm <tệp khóa bí mật> <tệp KEM>            : Mở gói khóa 32 Byte.\n");
+  wprintf(L"                                                  Kyber kết hợp AES-256. (Không\n");
+  wprintf(L"                                                  hỗ trợ USX)\n");
+  wprintf(L"    -kem <tệp khóa công khai> <tệp KEM ra>      : Đóng gói khóa 32 Byte. (chỉ để gỡ lỗi)\n");
+  wprintf(L"    -kdm <tệp khóa bí mật> <tệp KEM>            : Mở gói khóa 32 Byte. (chỉ để gỡ lỗi)\n");
   wprintf(L"[*] Ký tệp:     %s -sign\n", prog);
   wprintf(L"    -g <tệp khóa bí mật> <tệp chứng chỉ>        : Sinh ra cặp khóa bí mật và chứng\n");
   wprintf(L"                                                  chỉ Dilithium.\n");
@@ -172,14 +173,12 @@ int main(int argc, char* argv[])
       } else if (cleanArgv[2].compare(L"-d") == 0 && cleanArgv.size() == 6) // Giải mã tệp
       {
         return !Encrypt::decryptFile(cleanArgv[3], cleanArgv[4], cleanArgv[5]);
-      } else if (cleanArgv[2].compare(L"-kem") == 0 && cleanArgv.size() == 6)
+      } else if (cleanArgv[2].compare(L"-kem") == 0 && cleanArgv.size() == 5)
       {
-        std::wcout << L"Ahihi" << std::endl;
-        return 0;
+        return !Encrypt::encapsulateKey(cleanArgv[3], cleanArgv[4]);
       } else if (cleanArgv[2].compare(L"-kdm") == 0 && cleanArgv.size() == 5)
       {
-        std::wcout << L"Bhihi" << std::endl;
-        return 0;
+        return !Encrypt::decapsulateKey(cleanArgv[3], cleanArgv[4]);
       } else
       {
         wprintf(L"[-] Lệnh sử dụng -encrypt không hợp lệ!\n");

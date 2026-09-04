@@ -43,6 +43,20 @@ bool decryptFile(const std::wstring& secKeyPath, const std::wstring& inPath, con
  * @return false nếu xảy ra lỗi trong quá trình giải mã
  */
 bool aesEncrypt(const std::wstring& inPath, const std::wstring& outPath, const std::wstring& key);
+/**
+ * Đóng gói khóa 32 Byte
+ * @param pubPath đường dẫn tới tệp khóa công khai
+ * @param outPath đường dẫn tệp đầu ra
+ * @return false nếu xảy ra lỗi trong quá trình đóng gói khóa
+ */
+bool encapsulateKey(const std::wstring& pubPath, const std::wstring& outPath);
+/**
+ * Mở gói khóa 32 Byte
+ * @param secPath đường dẫn tới tệp khóa bí mật
+ * @param kemPath đường dẫn tới tệp gói khóa
+ * @return false nếu xảy ra lỗi trong quá trình mở gói khóa
+ */
+bool decapsulateKey(const std::wstring& secPath, const std::wstring& kemPath);
 } // namespace Encrypt
 
 #endif // __ENCRYPT_HPP
