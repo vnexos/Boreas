@@ -16,6 +16,7 @@
 #include "utils.hpp"
 
 #include <clocale>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -84,6 +85,8 @@ bool         bDumpFlag = false;
 std::wstring fileType;
 uint8_t      dilithiumKeyType = 0;
 
+std::vector<uint8_t> getKey(const std::wstring& key);
+
 bool SHAV(const std::wstring& input, const std::wstring& shavType)
 {
   int                  type = std::atoi(Converter::WStringToUtf8(shavType).c_str());
@@ -96,17 +99,34 @@ bool SHAV(const std::wstring& input, const std::wstring& shavType)
       return false;
   } else
   {
-    std::string strForHashing = Converter::WStringToUtf8(input);
-    if (bDumpFlag)
-      std::wcout << L"[*] Đang băm chuỗi văn bản (Độ dài: " << strForHashing.size() << L" byte, Thuật toán: SHA3-" << type << L")\n";
+    std::vector<uint8_t> key = getKey(input);
+
     res.resize(type / 8);
 
-    if (type == 256)
-      Crypto::VNExos::sha256(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
-    else if (type == 512)
-      Crypto::VNExos::sha512(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
-    else if (type == 1024)
-      Crypto::VNExos::sha1024(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
+    if (key.size() != 0)
+    {
+      if (bDumpFlag)
+        std::wcout << L"[*] Đang băm chuỗi thập lục phân (Độ dài: " << key.size() << L" Byte, Thuật toán: SHA3-" << type << L")\n";
+
+      if (type == 256)
+        Crypto::VNExos::sha256(res.data(), reinterpret_cast<uint8_t*>(key.data()), key.size());
+      else if (type == 512)
+        Crypto::VNExos::sha512(res.data(), reinterpret_cast<uint8_t*>(key.data()), key.size());
+      else if (type == 1024)
+        Crypto::VNExos::sha1024(res.data(), reinterpret_cast<uint8_t*>(key.data()), key.size());
+    } else
+    {
+      std::string strForHashing = Converter::WStringToUtf8(input);
+      if (bDumpFlag)
+        std::wcout << L"[*] Đang băm chuỗi văn bản (Độ dài: " << strForHashing.size() << L" byte, Thuật toán: SHA3-" << type << L")\n";
+
+      if (type == 256)
+        Crypto::VNExos::sha256(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
+      else if (type == 512)
+        Crypto::VNExos::sha512(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
+      else if (type == 1024)
+        Crypto::VNExos::sha1024(res.data(), reinterpret_cast<uint8_t*>(strForHashing.data()), strForHashing.size());
+    }
   }
 
   if (bDumpFlag)

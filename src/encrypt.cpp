@@ -395,7 +395,7 @@ bool Encrypt::decryptFile(const std::wstring& secKeyPath, const std::wstring& in
   return decryptDefaultFileWithKEM(secKeyPath, inPath, outPath);
 }
 
-static std::vector<uint8_t> getKey(const std::wstring& key)
+std::vector<uint8_t> getKey(const std::wstring& key)
 {
   std::string          charKey = Converter::WStringToUtf8(key);
   std::vector<uint8_t> result;
