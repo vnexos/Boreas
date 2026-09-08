@@ -15,13 +15,15 @@
 
 bool File::Write(const std::wstring& filePath, const File::Content& fileContent, uint64_t offset)
 {
-  // Mở tệp ở chế độ ghi nhị phân (std::ios::binary)
-  // Nếu dùng trên Windows, std::ofstream hỗ trợ nhận std::wstring trực tiếp
+  std::ios_base::openmode mode = std::ios::out | std::ios::binary;
+  if (offset != UINT64_MAX && offset != 0 && Exist(filePath))
+    mode |= std::ios::in;
+
 #if defined(_WIN32)
-  std::ofstream out(filePath, (offset != UINT64_MAX ? std::ios::in | std::ios::out : std::ios::out) | std::ios::binary);
+  std::ofstream out(filePath.c_str(), mode);
 #else
   std::string   utf8FilePath(filePath.begin(), filePath.end());
-  std::ofstream out(utf8FilePath, (offset != UINT64_MAX ? std::ios::in | std::ios::out : std::ios::out) | std::ios::binary);
+  std::ofstream out(utf8FilePath, mode);
 #endif
 
   if (!out)
@@ -40,9 +42,9 @@ bool File::Write(const std::wstring& filePath, const File::Content& fileContent,
 bool File::Append(const std::wstring& filePath, const Content& fileContent)
 {
   // Mở tệp ở chế độ ghi nhị phân (std::ios::binary)
-  // Nếu dùng trên Windows, std::ofstream hỗ trợ nhận std::wstring trực tiếp
+  // Nếu dùng trên Windows, std::ofstream hỗ trợ nhận std::wstring trực tiếp qua c_str()
 #if defined(_WIN32)
-  std::ofstream out(filePath, std::ios::app | std::ios::binary);
+  std::ofstream out(filePath.c_str(), std::ios::app | std::ios::binary);
 #else
   std::string   utf8FilePath(filePath.begin(), filePath.end());
   std::ofstream out(utf8FilePath, std::ios::app | std::ios::binary);
@@ -62,7 +64,7 @@ bool File::Read(const std::wstring& filePath, Content& fileContent, uint64_t len
 {
   // Mở tệp ở chế độ đọc nhị phân và dịch con trỏ xuống cuối tệp (std::ios::ate) để lấy kích thước
 #if defined(_WIN32)
-  std::ifstream inp(filePath, std::ios::in | std::ios::binary | std::ios::ate);
+  std::ifstream inp(filePath.c_str(), std::ios::in | std::ios::binary | std::ios::ate);
 #else
   std::string   utf8FilePath(filePath.begin(), filePath.end());
   std::ifstream inp(utf8FilePath, std::ios::in | std::ios::binary | std::ios::ate);
@@ -120,14 +122,10 @@ bool File::Hash(const std::wstring& filePath, std::vector<uint8_t>& outputHash, 
 
   // Mở tệp ở chế độ đọc nhị phân
 #if defined(_WIN32)
-  std::ifstream inp;
-  inp.rdbuf()->pubsetbuf(reinterpret_cast<char*>(streamBuffer.data()), streamBuffer.size());
-  inp.open(filePath, std::ios::in | std::ios::binary);
+  std::ifstream inp(filePath.c_str(), std::ios::in | std::ios::binary);
 #else
   std::string   utf8FilePath(filePath.begin(), filePath.end());
-  std::ifstream inp;
-  inp.rdbuf()->pubsetbuf(reinterpret_cast<char*>(streamBuffer.data()), streamBuffer.size());
-  inp.open(utf8FilePath, std::ios::in | std::ios::binary);
+  std::ifstream inp(utf8FilePath, std::ios::in | std::ios::binary);
 #endif
 
   if (!inp)

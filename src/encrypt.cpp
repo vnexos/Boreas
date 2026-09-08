@@ -54,8 +54,8 @@ bool Encrypt::generateKey(const std::wstring& secKeyPath, const std::wstring& pu
     return false;
   }
 
-  std::wcout << L"[+] Khóa bí mật được lưu ở: " << secKeyPath << " (" << KYBER_INDCCA_SECKEYBYTES << " byte)\n";
-  std::wcout << L"[+] Khóa công khai được lưu ở: " << pubKeyPath << " (" << KYBER_INDCCA_PUBKEYBYTES << " byte)\n";
+  std::wcout << L"[+] Khóa bí mật được lưu ở: " << secKeyPath << L" (" << KYBER_INDCCA_SECKEYBYTES << L" byte)\n";
+  std::wcout << L"[+] Khóa công khai được lưu ở: " << pubKeyPath << L" (" << KYBER_INDCCA_PUBKEYBYTES << L" byte)\n";
   dump(pk, KYBER_INDCCA_PUBKEYBYTES);
 
   secureZeroize(sk, KYBER_INDCCA_SECKEYBYTES);
@@ -85,7 +85,7 @@ static bool encryptDefaultFileWithKEM(const std::wstring& pubKeyPath, const std:
   if (data.empty())
     wprintf(L"[!] Tệp chứa dữ liệu thô bị rỗng?\n");
 
-  std::wcout << L"[+] Đang mã hóa " << inPath << " (" << data.size() << " byte)...\n";
+  std::wcout << L"[+] Đang mã hóa " << inPath << L" (" << data.size() << L" byte)...\n";
 
   // Đóng gói bằng Kyber
   uint8_t ct[KYBER_INDCCA_CIPHERTEXTBYTES];
@@ -123,7 +123,7 @@ static bool encryptDefaultFileWithKEM(const std::wstring& pubKeyPath, const std:
   if (!File::Write(outPath, payload))
     return false;
 
-  std::wcout << L"[+] Đã lưu dữ liệu mã hóa vào: " << outPath << " (" << payload.size() << " byte)\n";
+  std::wcout << L"[+] Đã lưu dữ liệu mã hóa vào: " << outPath << L" (" << payload.size() << L" byte)\n";
   dump(ct, sizeof(ct), L"Bản mã Kyber");
   dump(iv, sizeof(iv), L"Mảng khởi tạo");
   dump(ciphertext.data(), ciphertext.size(), L"Bản mã AES");
@@ -349,7 +349,7 @@ static bool decryptDefaultFileWithKEM(const std::wstring& secKeyPath, const std:
     return false;
   }
 
-  std::wcout << L"[+] Đang giải mã " << inPath << " (" << encryptedData.size() << " byte)...\n";
+  std::wcout << L"[+] Đang giải mã " << inPath << L" (" << encryptedData.size() << L" byte)...\n";
 
   // Giải nén các thành phần của tệp mã hóa
   const uint8_t* ct     = encryptedData.data();
@@ -385,7 +385,7 @@ static bool decryptDefaultFileWithKEM(const std::wstring& secKeyPath, const std:
   if (!File::Write(outPath, data))
     return false;
 
-  std::wcout << L"[+] Đã lưu dữ liệu giải mã vào: " << outPath << " (" << data.size() << " byte)\n";
+  std::wcout << L"[+] Đã lưu dữ liệu giải mã vào: " << outPath << L" (" << data.size() << L" byte)\n";
 
   return true;
 }
@@ -436,7 +436,7 @@ bool Encrypt::aesEncrypt(const std::wstring& inPath, const std::wstring& outPath
 
   if (byteKey.size() != 32)
   {
-    std::wcout << L"[-] Mã khóa không hợp lệ: " << byteKey.size() << " byte (mong đợi: 32 byte)" << std::endl;
+    std::wcout << L"[-] Mã khóa không hợp lệ: " << byteKey.size() << L" byte (mong đợi: 32 byte)" << std::endl;
     return false;
   }
 

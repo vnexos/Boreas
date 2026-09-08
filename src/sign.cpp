@@ -229,7 +229,7 @@ static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metad
 {
 // Mở tệp ở chế độ đọc nhị phân và dịch con trỏ xuống cuối tệp (std::ios::ate) để lấy kích thước
 #if defined(_WIN32)
-  std::ifstream inp(certPath, std::ios::in | std::ios::binary | std::ios::ate);
+  std::ifstream inp(certPath.c_str(), std::ios::in | std::ios::binary | std::ios::ate);
 #else
   std::string   utf8FileName(certPath.begin(), certPath.end());
   std::ifstream inp(utf8FileName, std::ios::in | std::ios::binary | std::ios::ate);
@@ -248,6 +248,7 @@ static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metad
     return 0;
   }
 
+  inp.clear();
   // Kiểm tra mã nhận diện
   uint64_t magic;
   inp.seekg(fileSize - 8);
@@ -346,9 +347,13 @@ static uint64_t readCertMetadata(const std::wstring& certPath, SignerMeta& metad
 static std::wstring promptLine(const std::wstring& label)
 {
   std::wstring line;
-  std::wcout << L"    " << label << ": ";
-  fflush(stdout);
-  std::getline(std::wcin, line);
+  std::wcout << L"    " << label << L": ";
+  std::wcout.flush();
+  if (std::getline(std::wcin, line))
+  {
+    while (!line.empty() && (line.back() == L'\r' || line.back() == L'\n' || line.back() == L' '))
+      line.pop_back();
+  }
   return line;
 }
 
@@ -949,7 +954,7 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
 
   // Mở tệp cần xác minh
 #if defined(_WIN32)
-  std::ifstream inp(inPath, std::ios::in | std::ios::binary | std::ios::ate);
+  std::ifstream inp(inPath.c_str(), std::ios::in | std::ios::binary | std::ios::ate);
 #else
   std::string   utf8FileName(inPath.begin(), inPath.end());
   std::ifstream inp(utf8FileName, std::ios::in | std::ios::binary | std::ios::ate);
@@ -968,6 +973,7 @@ bool Sign::verifyFile(const std::wstring& pubKeyPath, const std::wstring& inPath
     return false;
   }
 
+  inp.clear();
   // Đọc mã nhận diện (Magic Bytes) để phân biệt loại tệp
   uint64_t magic = 0;
   inp.seekg(fileSize - DILITHIUM_BYTES - 8, std::ios::beg);

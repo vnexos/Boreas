@@ -22,6 +22,11 @@
 #include <random>
 #include <string.h>
 #include <string>
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+#endif
 #include <sys/types.h>
 #include <vector>
 
@@ -35,7 +40,7 @@ void printUsage(const char* prog)
   wprintf(L"  ║ ML-KEM-1024 (Kyber) + ML-DSA-87 (Dilithium) ║\n");
   wprintf(L"  ╚═════════════════════════════════════════════╝\n");
   wprintf(L"Sử dụng:\n");
-  wprintf(L"[*] Mã hóa bất đối xứng: %s -encrypt\n", prog);
+  wprintf(L"[*] Mã hóa bất đối xứng: %hs -encrypt\n", prog);
   wprintf(L"    -g <tệp khóa bí mật> <tệp khóa công khai>   : Sinh ra cặp khóa Kyber.\n");
   wprintf(L"    -e <tệp khóa công khai> <tệp vào> <tệp ra>  : Mã hóa tệp hoặc tệp USX bằng\n");
   wprintf(L"                                                  khóa công khai Kyber kết hợp\n");
@@ -45,7 +50,7 @@ void printUsage(const char* prog)
   wprintf(L"                                                  hỗ trợ USX)\n");
   wprintf(L"    -kem <tệp khóa công khai> <tệp KEM ra>      : Đóng gói khóa 32 Byte. (chỉ để gỡ lỗi)\n");
   wprintf(L"    -kdm <tệp khóa bí mật> <tệp KEM>            : Mở gói khóa 32 Byte. (chỉ để gỡ lỗi)\n");
-  wprintf(L"[*] Ký tệp:     %s -sign\n", prog);
+  wprintf(L"[*] Ký tệp:     %hs -sign\n", prog);
   wprintf(L"    -g <tệp khóa bí mật> <tệp chứng chỉ>        : Sinh ra cặp khóa bí mật và chứng\n");
   wprintf(L"                                                  chỉ Dilithium.\n");
   wprintf(L"    -s <tệp khóa bí mật> <tệp chứng chỉ>        : Ký tệp bằng khóa bí mật và chứng\n");
@@ -77,8 +82,8 @@ void printUsage(const char* prog)
   wprintf(L"                                                  và sẽ không được tin cậy. CHỈ\n");
   wprintf(L"                                                  NÊN SINH KHÓA NÀY VỚI MỤC ĐÍCH\n");
   wprintf(L"                                                  NGHIÊN CỨU.\n");
-  wprintf(L"[*] Mã hóa đối xứng: %s -aes256 <tệp vào> <tệp ra> <32 byte SHA3>\n", prog);
-  wprintf(L"[*] Băm tệp        : %s -shav <256|512|1024> <tên tệp|chuỗi byte>\n", prog);
+  wprintf(L"[*] Mã hóa đối xứng: %hs -aes256 <tệp vào> <tệp ra> <32 byte SHA3>\n", prog);
+  wprintf(L"[*] Băm tệp        : %hs -shav <256|512|1024> <tên tệp|chuỗi byte>\n", prog);
 }
 
 bool         bDumpFlag = false;
@@ -141,8 +146,11 @@ bool SHAV(const std::wstring& input, const std::wstring& shavType)
 
 int main(int argc, char* argv[])
 {
-  // Cài đặt để chương trình có thể hoạt động tốt với tiếng Việt
-  std::setlocale(LC_ALL, "C.UTF-8");
+#if defined(_WIN32)
+  SetConsoleOutputCP(CP_UTF8);
+  SetConsoleCP(CP_UTF8);
+#endif
+  std::setlocale(LC_ALL, "");
   if (argc < 2)
   {
     printUsage(argv[0]);
